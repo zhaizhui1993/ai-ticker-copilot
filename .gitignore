@@ -1,0 +1,16 @@
+# 密钥与环境
+.env
+
+# 个人隐私配置（仓库只提交 .example 模板）
+config_files/stocks.yaml
+config_files/influencers.yaml
+
+# 运行时数据（缓存 / X 登录态）
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/

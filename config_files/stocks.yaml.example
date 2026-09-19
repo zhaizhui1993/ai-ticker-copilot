@@ -1,0 +1,12 @@
+# 股票池 —— 请填入你关注的 AI 产业链美股
+#   symbol:    ticker 代码（大写，如 NVDA）
+#   segment:   产业链环节：gpu/foundry/equipment/cloud/software/power/etf/other
+#   position:  holding(持仓) / watchlist(关注未建仓)
+#   cost_basis: 持仓成本 USD（可选，仅展示盈亏）
+stocks: []
+# 示例：
+# stocks:
+#   - symbol: NVDA
+#     segment: gpu
+#     position: holding
+#     cost_basis: 120.5

@@ -1,0 +1,10 @@
+# X 博主列表 —— 请填入你要跟进的财经博主
+#   handle:  X 用户名（不带 @）
+#   note:    备注
+#   tickers: 主要跟踪标的（可选，用于帖子→股票弱关联）
+influencers: []
+# 示例：
+# influencers:
+#   - handle: elonmusk
+#     note: 半导体/AI
+#     tickers: [NVDA]

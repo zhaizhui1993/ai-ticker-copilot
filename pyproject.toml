@@ -1,0 +1,33 @@
+[project]
+name = "ai-ticker-copilot"
+version = "0.1.0"
+description = "美股 AI 股票分析辅助系统：四维评分 + 历史事件类比 + 准实时事件跟进（仅供个人研究参考，不构成投资建议）"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "langchain>=0.3.27",
+    "langchain-core>=1.0.2",
+    "langchain-openai>=0.3.35",
+    "yfinance==1.5.2",
+    "curl-cffi>=0.15,<0.16",
+    "fred-py-api>=1.2.1",
+    "feedparser>=6.0",
+    "httpx>=0.28",
+    "playwright>=1.50",
+    "tenacity>=9.0",
+    "apscheduler>=3.11",
+    "pymysql>=1.1",
+    "dbutils>=3.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+]

@@ -1,0 +1,20 @@
+# 本地 MySQL 8（本机无 MySQL 实例时一键拉起：docker compose up -d mysql）
+# 应用本体不做容器化；账号密码与 .env 的 DB_* 保持一致
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: atc-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ticker_copilot
+      MYSQL_DATABASE: ticker_copilot
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:

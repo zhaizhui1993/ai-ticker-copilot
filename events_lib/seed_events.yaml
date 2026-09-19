@@ -1,0 +1,138 @@
+# 种子事件库（10 条，随仓库版本管理；docs/04-events/seed-events.md）
+# 事实层已定；联动层量化字段（drawdown/drawdown_days/recovery_days/market.*）
+# 由 scripts/backfill_events.py 在 P4 阶段用 yfinance 按日期实测回填后人工核对。
+# 2026-07 条目的量化数据来自 2026-09 复盘实测，回填时可交叉核对。
+events:
+  - event_id: 2018-03-us-china-tariff
+    name: 中美贸易摩擦启动（301 调查→多轮关税）
+    start_date: 2018-03-22
+    category: macro
+    summary: 美国依据 301 调查对华加征关税，此后多轮升级，压制跨国贸易与科技供应链盈利预期。
+    mechanism: 关税抬升成本与需求不确定性，科技硬件板块估值与盈利双杀。
+    keywords: [关税, 301调查, 中美贸易, tariff]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.6}
+      - {ticker: NVDA, direction: -1, magnitude: 0.5}
+    market: {}
+    tags: [贸易摩擦, 多轮事件]
+
+  - event_id: 2020-02-covid-shock
+    name: 新冠疫情全球冲击
+    start_date: 2020-02-24
+    category: crisis
+    summary: 疫情全球扩散引发流动性危机，美股十日内四次熔断，随后激进财政货币刺激 V 型反转。
+    mechanism: 流动性挤兑强制去杠杆；政策兜底后风险资产快速修复。
+    keywords: [疫情, 熔断, 流动性危机, covid]
+    tickers_affected:
+      - {ticker: SPX, direction: -1, magnitude: 0.8}
+      - {ticker: IXIC, direction: -1, magnitude: 0.8}
+    market: {}
+    tags: [危机, V型反转]
+
+  - event_id: 2022-03-fed-hike-cycle
+    name: 美联储激进加息周期启动
+    start_date: 2022-03-16
+    category: monetary
+    summary: 通胀破 8 后美联储开启四十年来最快加息周期，成长股估值系统性压缩，纳指全年深熊。
+    mechanism: 无风险利率抬升压缩长久期资产估值，成长/科技首当其冲。
+    keywords: [加息, 通胀, 缩表, fed]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.8}
+      - {ticker: NVDA, direction: -1, magnitude: 0.7}
+    market: {}
+    tags: [货币政策, 体制级]
+
+  - event_id: 2022-10-chip-export-rule
+    name: 对华先进制程芯片出口管制（10 月 7 日规则）
+    start_date: 2022-10-07
+    category: regulation
+    summary: 美国 BIS 发布对华先进计算与半导体制造出口管制新规，限制美籍人才服务中国芯片业。
+    mechanism: 直接削减半导体公司在华收入预期，板块单日深跌。
+    keywords: [出口管制, BIS, 先进制程, 芯片禁令]
+    tickers_affected:
+      - {ticker: NVDA, direction: -1, magnitude: 0.6}
+      - {ticker: SMH, direction: -1, magnitude: 0.5}
+    market: {}
+    tags: [管制, 第一轮]
+
+  - event_id: 2023-03-svb-crisis
+    name: 硅谷银行事件
+    start_date: 2023-03-10
+    category: crisis
+    summary: SVB 因久期错配与挤兑被接管，区域银行危机蔓延，一度冲击科技股风险偏好。
+    mechanism: 存款挤兑引发信用收缩担忧；监管快速兜底后影响集中在区域银行。
+    keywords: [硅谷银行, SVB, 区域银行, 挤兑]
+    tickers_affected:
+      - {ticker: SPX, direction: -1, magnitude: 0.3}
+    market: {}
+    tags: [危机, 传导有限]
+
+  - event_id: 2023-05-ai-rally-start
+    name: NVDA 财报引爆 AI 行情启动
+    start_date: 2023-05-24
+    category: tech
+    summary: 英伟达财报指引大超预期，AI 算力需求叙事获得实证，板块开启持续两年的主升行情。
+    mechanism: 盈利上修驱动估值与业绩戴维斯双击，算力链全面重估。
+    keywords: [AI, 财报, capex, 算力]
+    tickers_affected:
+      - {ticker: NVDA, direction: 1, magnitude: 0.9}
+      - {ticker: SMH, direction: 1, magnitude: 0.7}
+    market: {}
+    tags: [正向基准, 防止类比永远偏空]
+
+  - event_id: 2023-10-chip-export-tighten
+    name: 对华芯片管制收紧（A800/H800 禁售）
+    start_date: 2023-10-17
+    category: regulation
+    summary: 管制升级，专为中国市场设计的 A800/H800 被纳入限制，围堵加强。
+    mechanism: 中国特供芯片收入归零预期，板块短线承压后因需求韧性修复。
+    keywords: [出口管制, A800, H800, 算力管制]
+    tickers_affected:
+      - {ticker: NVDA, direction: -1, magnitude: 0.5}
+    market: {}
+    tags: [管制, 第二轮]
+
+  - event_id: 2024-12-chip-export-final
+    name: 管制进一步扩围（HBM 等）
+    start_date: 2024-12-02
+    category: regulation
+    summary: 第三轮管制将高带宽存储（HBM）与更多设备纳入，制裁范围进一步扩大。
+    mechanism: 供应链合规成本抬升；市场已部分定价，边际冲击弱于前两轮。
+    keywords: [出口管制, HBM, 设备管制]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.4}
+    market: {}
+    tags: [管制, 第三轮]
+
+  - event_id: 2025-01-deepseek-shock
+    name: DeepSeek V3/R1 发布冲击算力叙事
+    start_date: 2025-01-27
+    category: tech
+    summary: 低成本高性能开源模型发布，动摇"更大算力=更强模型"叙事，英伟达单日重挫。
+    mechanism: 低成本模型引发 capex 必要性重估，算力链估值下杀后随需求证伪担忧消退而修复。
+    keywords: [deepseek, 开源模型, capex, 算力叙事]
+    tickers_affected:
+      - {ticker: NVDA, direction: -1, magnitude: 0.7}
+      - {ticker: SMH, direction: -1, magnitude: 0.5}
+    market: {}
+    tags: [技术冲击, 单日事件, 快速修复]
+
+  - event_id: 2026-07-ai-valuation-pullback
+    name: AI 变现疑虑+美债收益率上行引发半导体集中回调
+    start_date: 2026-06-22
+    end_date: 2026-07-29
+    category: tech
+    summary: 无离散政策冲击下，AI 变现疑虑叠加收益率上行引发半导体集中回调，7/29 六票集体见底后 V 型反转；指数全程未破 MA200，VIX 峰值仅 20.7——体制层完好的深回调原型。
+    mechanism: 估值与叙事自我修正，无政策/流动性冲击，恐慌出清后快速收复。
+    keywords: [AI回调, 收益率, 估值, 半导体]
+    tickers_affected:
+      - {ticker: "^SOX", direction: -1, magnitude: 0.7, drawdown: -28.6}
+      - {ticker: BE, direction: -1, magnitude: 0.8, drawdown: -52.7}
+      - {ticker: COHR, direction: -1, magnitude: 0.8, drawdown: -47.8}
+      - {ticker: MRVL, direction: -1, magnitude: 0.8, drawdown: -47.4}
+      - {ticker: INTC, direction: -1, magnitude: 0.7, drawdown: -41.9}
+      - {ticker: LITE, direction: -1, magnitude: 0.7, drawdown: -37.1}
+      - {ticker: NVDA, direction: -1, magnitude: 0.4, drawdown: -10.6}
+    market:
+      vix_peak: 20.7
+    tags: [叙事回调, 深回调买点原型, 2026-09复盘实测]
