@@ -46,6 +46,13 @@
   .event .meta { color:#8a8f98; font-size:12px; }
   .signal-block { border:1px solid #e5e7eb; border-radius:10px; padding:14px; margin-bottom:12px; }
   .disclaimer { margin-top:16px; padding:10px; background:#fef3c7; border-radius:8px; font-size:12px; color:#92400e; }
+  .chat-box { height: 420px; overflow-y: auto; border:1px solid #e5e7eb; border-radius:10px; padding:14px; background:#fafafa; }
+  .msg { max-width: 82%; margin-bottom: 10px; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap; font-size: 13px; }
+  .msg.user { background: var(--blue); color:#fff; margin-left: auto; }
+  .msg.assistant { background:#fff; border:1px solid #e5e7eb; }
+  .msg .role { font-size:11px; opacity:.7; margin-bottom:2px; }
+  .chat-input { display:flex; gap:8px; margin-top:10px; }
+  .chat-input textarea { flex:1; padding:8px; border:1px solid #d1d5db; border-radius:8px; font: inherit; resize: vertical; }
   select, input[type=date] { padding:6px; border:1px solid #d1d5db; border-radius:6px; }
 </style>
 </head>
@@ -219,6 +226,33 @@
         <span class="muted">{{ historyMessage }}</span>
       </div>
     </section>
+    <!-- 对话 -->
+    <section v-if="tab==='chat'">
+      <div class="panel">
+        <h3>研究助理（基于系统数据的多轮对话）</h3>
+        <p class="muted" style="margin-bottom:10px">
+          可追问报告细节、质疑结论、做情景推演（"如果 NVDA 跌破 MA50？"）。
+          助理只能引用系统已采集的数据，缺失会直说；回答不构成投资建议。
+        </p>
+        <div class="chat-box" id="chatBox">
+          <div v-if="!chatMessages.length" class="muted">
+            示例提问：为什么 NVDA 的信号是 watch_add？｜2026-07 类比事件的量化数据？｜现在产业分为什么偏低？
+          </div>
+          <div v-for="(m,i) in chatMessages" :key="i" class="msg" :class="m.role">
+            <div class="role">{{ m.role === 'user' ? '我' : '助理' }}</div>{{ m.content }}
+          </div>
+          <div v-if="chatBusy" class="muted">助理思考中…</div>
+        </div>
+        <div class="chat-input">
+          <textarea v-model="chatInput" rows="2" placeholder="输入问题，Enter 发送（Shift+Enter 换行）"
+            @keydown.enter.exact.prevent="sendChat"></textarea>
+          <button class="btn" @click="sendChat" :disabled="chatBusy || !chatInput.trim()">发送</button>
+        </div>
+        <div v-if="chatError" class="warn" style="margin-top:6px">{{ chatError }}</div>
+        <div class="disclaimer">本对话仅供个人研究参考，不构成投资建议。</div>
+      </div>
+    </section>
+
   </main>
 </div>
 

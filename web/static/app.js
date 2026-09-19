@@ -27,6 +27,7 @@ const app = createApp({
       { key: "events", label: "事件中心" },
       { key: "x", label: "X 观点" },
       { key: "analysis", label: "分析" },
+      { key: "chat", label: "对话" },
     ];
     const tab = ref("overview");
     const mockMode = ref(false);
@@ -48,6 +49,10 @@ const app = createApp({
     const runError = ref("");
     const result = ref(null);
     const historyMessage = ref("（DB 配置后显示历史运行记录）");
+    const chatMessages = ref([]);
+    const chatInput = ref("");
+    const chatBusy = ref(false);
+    const chatError = ref("");
     let lastSeen = new Date().toISOString().slice(0, 10);
     let klineChart = null;
 
@@ -178,6 +183,36 @@ const app = createApp({
       }
     }
 
+    async function sendChat() {
+      const text = chatInput.value.trim();
+      if (!text || chatBusy.value) return;
+      chatError.value = "";
+      chatMessages.value.push({ role: "user", content: text });
+      chatInput.value = "";
+      chatBusy.value = true;
+      scrollChat();
+      try {
+        const data = await api.send("/api/chat", "POST",
+          { messages: chatMessages.value.map(m => ({ role: m.role, content: m.content })) });
+        chatMessages.value.push({ role: "assistant", content: data.reply });
+      } catch (e) {
+        chatError.value = e.message;
+        if (e.message.includes("LLM")) {
+          chatError.value += "（对话是唯一强依赖 LLM 的功能，评分/分析不受影响）";
+        }
+      } finally {
+        chatBusy.value = false;
+        scrollChat();
+      }
+    }
+
+    function scrollChat() {
+      setTimeout(() => {
+        const box = document.getElementById("chatBox");
+        if (box) box.scrollTop = box.scrollHeight;
+      }, 30);
+    }
+
     function openStock(symbol) { detailSymbol.value = symbol; switchTab("stock"); }
 
     onMounted(async () => {
@@ -192,6 +227,7 @@ const app = createApp({
       detailSymbol, detailWindow, detail, scopes, scopeFilter,
       events, eventsMessage, lib, calendar, calendarNote, influencers,
       running, runError, result, historyMessage,
+      chatMessages, chatInput, chatBusy, chatError, sendChat,
       signalLabel, scopeLabel, indicatorLabel, fmt,
       switchTab, openStock, loadDashboard, loadDetail, loadEvents, runAnalysis,
     };

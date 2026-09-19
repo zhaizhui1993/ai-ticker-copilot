@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from config.settings import settings
-from web.api import analysis, config_api, dashboard, events, stocks
+from web.api import analysis, chat, config_api, dashboard, events, stocks
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(analysis.router)
     app.include_router(config_api.router)
+    app.include_router(chat.router)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
