@@ -10,7 +10,12 @@
 ## 抓取流程
 
 1. 读 influencers.yaml（空列表则跳过并在 UI 提示）。
-2. 对每个博主**串行**：打开 `x.com/{handle}` → 等 `article[data-testid="tweet"]`（15s 超时）→ 滚动 3~5 次（随机 2-4s 间隔）→ 提取正文 `[data-testid="tweetText"]`、时间、互动数、status URL（取 post_id）。
+2. 对每个博主**串行**，抓**两个页签**并按 post_id 去重合并：
+   - `x.com/{handle}`（主页帖）
+   - `x.com/{handle}/with_replies`（帖子 + **回复别人的内容**）
+   每页：等待 `article[data-testid="tweet"]`（15s 超时）→ 滚动 3~5 次（随机 2-4s 间隔）→
+   提取正文 `[data-testid="tweetText"]`、时间、互动数、status URL（取 post_id）、
+   **回复对象 reply_to**（从 "Replying to @x" 上下文提取；自续帖视为原创，值为 NULL）。
 3. 过滤：仅保留 48h 内且正文命中关注词（股票池 ticker、$ 符号、AI/chip/Fed/tariff 等）的帖子。
 4. 入库：post_id 唯一键去重（增量抓取天然幂等）。**抓取时不调 LLM**。
 

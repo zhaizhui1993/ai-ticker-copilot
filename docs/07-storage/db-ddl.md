@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS x_posts (
   likes         INT,
   posted_at     DATETIME,
   collected_at  DATETIME,
+  reply_to      VARCHAR(64),          -- 回复对象 handle（原创帖为 NULL；with_replies 页抓取）
   sentiment     TINYINT,             -- -1/0/1，打标后回填
   sentiment_note VARCHAR(500),
   tickers_mentioned VARCHAR(255)     -- 逗号分隔，打标后回填

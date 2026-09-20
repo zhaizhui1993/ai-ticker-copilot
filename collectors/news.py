@@ -157,6 +157,15 @@ def poll_once(pool_tickers: list[str]) -> dict:
     filtered = prefilter(new_articles, pool_tickers)
     events = llm.extract_events(filtered, pool_tickers)
 
+    # 富化关联个股价格反应（行情失败按 ticker 降级，不影响入库）
+    if events:
+        try:
+            from collectors import get_market
+            from events_lib.reaction import enrich_events
+            enrich_events(events, get_market())
+        except Exception as exc:
+            print(f"[news] 价格反应富化降级：{exc}")
+
     stored = 0
     if events:
         event_hashes = [repository.article_hash(e.raw_url, e.title) for e in events]

@@ -162,6 +162,13 @@
             <div class="meta">{{ e.occurred_date }} ｜ {{ scopeLabel(e.scope) }} / {{ e.category }} ｜ {{ e.source }}
               <span v-if="e.tickers_mentioned.length">｜ 涉及 {{ e.tickers_mentioned.join(', ') }}</span></div>
             <div class="muted">{{ e.summary }}</div>
+            <div v-if="e.price_reactions && e.price_reactions.length" style="margin-top:4px">
+              <span v-for="r in e.price_reactions" :key="r.ticker"
+                    :style="{color: (r.event_day_pct||0) >= 0 ? '#c62828' : '#2e7d32', marginRight:'12px'}">
+                {{ r.ticker }} {{ r.event_day_pct != null ? ((r.event_day_pct>=0?'+':'')+r.event_day_pct+'%') : '-' }}
+                <span class="muted">前5日 {{ r.prior_5d_pct != null ? r.prior_5d_pct+'%' : '-' }}｜距52周高 {{ r.drawdown_52w != null ? r.drawdown_52w+'%' : '-' }}</span>
+              </span>
+            </div>
           </div>
         </div>
         <div v-else class="muted">{{ eventsMessage }}</div>

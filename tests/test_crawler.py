@@ -2,7 +2,13 @@
 
 from datetime import datetime, timedelta, timezone
 
-from collectors.x_crawler import STATUS_RE, XCookieExpired, filter_posts
+from collectors.x_crawler import (
+    STATUS_RE,
+    XCookieExpired,
+    filter_posts,
+    pick_reply_handle,
+    state_path,
+)
 from domain.events import XPost
 
 
@@ -45,5 +51,25 @@ def test_post_id_extraction() -> None:
 
 def test_cookie_expired_is_structured() -> None:
     assert "export_x_cookie" in XCookieExpired("…").__doc__ or True
-    from collectors.x_crawler import state_path
     assert state_path().name == "state.json"
+
+
+def test_pick_reply_handle() -> None:
+    candidates = [("@blogger_self", "/blogger_self"),   # 作者本人（自续帖）→ 跳过
+                  ("@target_user", "/target_user")]     # 真实回复对象
+    assert pick_reply_handle(candidates, author="blogger_self") == "target_user"
+
+    # 无有效候选：全是作者自己 → 原创帖语义
+    assert pick_reply_handle([("@blogger_self", "/blogger_self")], "blogger_self") is None
+    # status 链接不是用户主页 → 不算回复对象
+    assert pick_reply_handle([("@someone", "/someone/status/123")], "author") is None
+    # 空列表 / 带 / 路径的用户链接
+    assert pick_reply_handle([], "author") is None
+    assert pick_reply_handle([("@a", "/a/with_replies")], "b") == "a"
+
+
+def test_xpost_reply_to_field() -> None:
+    post = XPost(post_id="1", author="a", content="chip news")
+    assert post.reply_to is None                     # 原创帖默认 None
+    reply = XPost(post_id="2", author="a", content="agreed!", reply_to="bigtrader")
+    assert reply.reply_to == "bigtrader"

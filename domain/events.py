@@ -69,8 +69,21 @@ class HistoricalEvent(BaseModel):
 # ---------- 当前事件（新闻抽取产物） ----------
 
 
+class PriceReaction(BaseModel):
+    """事件关联个股的价格反应（入库时富化；口径见 events_lib/reaction.py）"""
+
+    ticker: str
+    event_day_pct: float | None = None    # 事件日（或最近已收交易日）涨跌 %
+    prior_5d_pct: float | None = None     # 事件前 5 日累计 %（背景趋势）
+    prior_20d_pct: float | None = None    # 事件前 20 日累计 %
+    drawdown_52w: float | None = None     # 事件时点距 52 周高点回撤 %（≤0）
+    volume_ratio: float | None = None     # 事件日量比（vs 前 20 日均量）
+    as_of: date | None = None             # 反应计算所用的最后交易日
+    note: str = ""                        # 如"事件日未收盘，取最近交易日"
+
+
 class CurrentEvent(BaseModel):
-    event_id: str                      # "2026-09-19-001"
+    event_id: str                      # "2026-09-20-001"
     title: str
     occurred_date: date
     scope: EventScope
@@ -80,6 +93,7 @@ class CurrentEvent(BaseModel):
     tickers_mentioned: list[str] = Field(default_factory=list)
     source: str
     raw_url: str = ""                  # 去重键之一
+    price_reactions: list[PriceReaction] = Field(default_factory=list)  # 入库时富化
 
 
 class RawArticle(BaseModel):
@@ -129,6 +143,7 @@ class XPost(BaseModel):
     likes: int | None = None
     posted_at: datetime | None = None
     collected_at: datetime | None = None
+    reply_to: str | None = None       # 回复对象 handle（不带 @）；原创帖为 None
     sentiment: int | None = None      # -1/0/1，打标后回填
     sentiment_note: str = ""
     tickers_mentioned: list[str] = Field(default_factory=list)

@@ -19,7 +19,7 @@ def test_build_chat_context_grounded() -> None:
 
     ctx = build_chat_context()
     assert "NVDA" in ctx["pool"]                       # 股票池入上下文
-    assert ctx["lib_count"] == 10                      # 历史事件库摘要
+    assert ctx["lib_count"] == 31                      # 历史事件库摘要（v1.2 扩充批次后）
     assert "2026-07-ai-valuation-pullback" in ctx["lib"]
     assert "LLM 未配置" in ctx["degraded"]             # 降级状态如实标注
     assert ("不可用" in ctx["events"]) or ("暂无" in ctx["events"]) or ("[" in ctx["events"])

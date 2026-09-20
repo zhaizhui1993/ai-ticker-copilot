@@ -43,6 +43,8 @@ def extract_events(
     seq_start: int = 1,
     today: date | None = None,
 ) -> list[CurrentEvent]:
+    if not articles:
+        return []  # 空批次不调 LLM（事件管道每 20min 一轮，空转是最大浪费源）
     if not llm_available():
         return extract_events_rule(articles, pool_tickers, seq_start, today)
     try:

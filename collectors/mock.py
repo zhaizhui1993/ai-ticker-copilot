@@ -103,6 +103,14 @@ class MockNews:
         filtered = prefilter(articles, pool_tickers)
         events = llm.extract_events(filtered, pool_tickers)
 
+        # 与真实管道一致：富化价格反应（mock 行情即时可得）
+        try:
+            from events_lib.reaction import enrich_events
+            from collectors import get_market
+            enrich_events(events, get_market())
+        except Exception as exc:
+            print(f"[mock-news] 价格反应富化降级：{exc}")
+
         stored, db_error = 0, None
         try:
             from storage import repository

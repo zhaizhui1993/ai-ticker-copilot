@@ -81,11 +81,14 @@ def test_snapshot_upsert_same_day_overwrites(database) -> None:
 
 def test_seed_events_load_and_upsert(database) -> None:
     events = load_seed_events()
-    assert len(events) == 10                                  # 种子清单 10 条
+    assert len(events) == 31                                  # 种子清单 31 条（v1.2 扩充批次后）
     assert any(e.event_id == "2026-07-ai-valuation-pullback" for e in events)
+    positive = sum(1 for e in events
+                   if any(t.direction > 0 for t in e.tickers_affected))
+    assert positive >= 8                                      # 正向基准配平（防类比偏空）
 
     count = upsert_seed_events()
-    assert count == 10
+    assert count == len(events)
     assert count == upsert_seed_events()                      # 幂等：重复入库不增不减
 
     stored = repository.list_events(source="seed")

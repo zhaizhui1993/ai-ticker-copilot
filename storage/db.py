@@ -57,6 +57,7 @@ DDL_STATEMENTS = [
       likes         INT,
       posted_at     DATETIME,
       collected_at  DATETIME,
+      reply_to      VARCHAR(64),
       sentiment     TINYINT,
       sentiment_note VARCHAR(500),
       tickers_mentioned VARCHAR(255)
@@ -127,6 +128,12 @@ def check_health() -> None:
         raise RuntimeError(f"MySQL 健康检查失败：{exc}") from exc
 
 
+# 增量列迁移（个人项目轻量方案）：已存在的旧表补新列，重复列(1060)静默跳过
+MIGRATION_STATEMENTS = [
+    "ALTER TABLE x_posts ADD COLUMN reply_to VARCHAR(64) NULL",
+]
+
+
 def init_schema(database: str | None = None) -> None:
     """幂等建库建表（database 为 None 时用 settings.db_name；测试可指向独立库）。"""
     database = database or settings.db_name
@@ -138,6 +145,12 @@ def init_schema(database: str | None = None) -> None:
     with _connect(database) as conn, conn.cursor() as cursor:
         for ddl in DDL_STATEMENTS:
             cursor.execute(ddl)
+        for stmt in MIGRATION_STATEMENTS:
+            try:
+                cursor.execute(stmt)
+            except Exception as exc:  # noqa: BLE001
+                if getattr(exc, "args", [None])[0] != 1060:  # 列已存在
+                    raise
         conn.commit()
 
 

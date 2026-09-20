@@ -105,7 +105,7 @@ def test_2026_07_event_carries_measured_data() -> None:
     event = next(e for e in lib if e.event_id == "2026-07-ai-valuation-pullback")
     assert event.market.vix_peak == 20.7
     drawdowns = [t.drawdown for t in event.tickers_affected if t.drawdown is not None]
-    assert len(drawdowns) == 7                            # 七个标的均带实测回撤
+    assert len(drawdowns) == 8                            # 八个标的（含 IXIC -10.1）均带实测回撤
 
     fake = _event(
         title="AI 估值疑虑再起，半导体板块大跌",

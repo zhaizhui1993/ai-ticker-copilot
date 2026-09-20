@@ -60,8 +60,26 @@ def state_path() -> Path:
     return Path(settings.x_storage_state_path)
 
 
+def pick_reply_handle(candidates: list[tuple[str, str]], author: str) -> str | None:
+    """纯函数：从候选 (文本, href) 中选出回复对象——@ 开头、非作者本人、非 status 链接。
+
+    自回复（楼主续帖）视为原创（返回 None），与"回复别人"区分。
+    """
+    for text, href in candidates:
+        handle = text.lstrip("@").strip().split("/")[0]
+        if not handle or handle.lower() == author.lower():
+            continue
+        if "/status/" in href:
+            continue
+        return handle
+    return None
+
+
 class XCollector:
     name = "x-crawler"
+
+    # 主页帖子页 + 帖子与回复合并页（with_replies 含原创+回复，双页抓取后按 post_id 去重）
+    PROFILE_TABS = ("", "/with_replies")
 
     def crawl(self, influencers: list[InfluencerConfig], pool_tickers: list[str]) -> dict:
         """抓取一轮。返回 {"posts": [...], "skipped": [...], "error": str|None}。
@@ -105,49 +123,78 @@ class XCollector:
         return {"posts": posts, "skipped": skipped, "error": error}
 
     def _crawl_profile(self, context, handle: str) -> list[XPost]:
-        page = context.new_page()
-        page.goto(f"https://x.com/{handle}", timeout=30000)
-        page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
-
-        if self._blocked(page):
-            raise XCookieExpired("页面出现登录墙/异常提示：cookie 已失效")
-
-        for _ in range(random.randint(3, 5)):  # 滚动 3~5 次，不深挖历史
-            page.mouse.wheel(0, 1600)
-            page.wait_for_timeout(random.randint(2000, 4000))
-        if self._blocked(page):
-            raise XCookieExpired("滚动后出现异常提示：cookie 已失效")
-
+        """抓主页帖 + 回复两页，post_id 去重合并。"""
         collected_at = datetime.now(timezone.utc)
-        posts = []
-        for article in page.locator('article[data-testid="tweet"]').all():
+        posts: list[XPost] = []
+        seen: set[str] = set()
+
+        for suffix in self.PROFILE_TABS:
+            page = context.new_page()
             try:
-                text_loc = article.locator('[data-testid="tweetText"]')
-                content = text_loc.first.inner_text() if text_loc.count() else ""
-                posted_at = None
-                time_loc = article.locator("time")
-                if time_loc.count():
-                    raw = time_loc.first.get_attribute("datetime")
-                    if raw:
-                        posted_at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                post_id, url = "", ""
-                for link in article.locator('a[href*="/status/"]').all():
-                    href = link.get_attribute("href") or ""
-                    match = STATUS_RE.search(href)
-                    if match:
-                        post_id = match.group(1)
-                        url = f"https://x.com{href}" if href.startswith("/") else href
-                        break
-                if not content or not post_id:
-                    continue
-                posts.append(XPost(
-                    post_id=post_id, author=handle, content=content,
-                    url=url, posted_at=posted_at, collected_at=collected_at,
-                ))
-            except Exception:
-                continue  # 单条解析失败不影响整轮
-        page.close()
+                page.goto(f"https://x.com/{handle}{suffix}", timeout=30000)
+                page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
+                if self._blocked(page):
+                    raise XCookieExpired("页面出现登录墙/异常提示：cookie 已失效")
+
+                for _ in range(random.randint(3, 5)):  # 滚动 3~5 次，不深挖历史
+                    page.mouse.wheel(0, 1600)
+                    page.wait_for_timeout(random.randint(2000, 4000))
+                if self._blocked(page):
+                    raise XCookieExpired("滚动后出现异常提示：cookie 已失效")
+
+                for article in page.locator('article[data-testid="tweet"]').all():
+                    post = self._extract_post(article, handle, collected_at)
+                    if post and post.post_id not in seen:
+                        seen.add(post.post_id)
+                        posts.append(post)
+            finally:
+                page.close()
+            if suffix != self.PROFILE_TABS[-1]:
+                time.sleep(random.uniform(2, 4))  # 页签间小间隔
         return posts
+
+    def _extract_post(self, article, author: str, collected_at) -> XPost | None:
+        """单条 article → XPost；解析失败返回 None（不影响整轮）。"""
+        try:
+            text_loc = article.locator('[data-testid="tweetText"]')
+            content = text_loc.first.inner_text() if text_loc.count() else ""
+            posted_at = None
+            time_loc = article.locator("time")
+            if time_loc.count():
+                raw = time_loc.first.get_attribute("datetime")
+                if raw:
+                    posted_at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            post_id, url = "", ""
+            for link in article.locator('a[href*="/status/"]').all():
+                href = link.get_attribute("href") or ""
+                match = STATUS_RE.search(href)
+                if match:
+                    post_id = match.group(1)
+                    url = f"https://x.com{href}" if href.startswith("/") else href
+                    break
+            if not content or not post_id:
+                return None
+            return XPost(
+                post_id=post_id, author=author, content=content,
+                url=url, posted_at=posted_at, collected_at=collected_at,
+                reply_to=self._reply_to(article, author),
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _reply_to(article, author: str) -> str | None:
+        """从 "Replying to @x" 上下文提取回复对象（DOM 结构可能变化，防御式解析）。"""
+        try:
+            candidates: list[tuple[str, str]] = []
+            for link in article.locator('a[role="link"][href^="/"]').all():
+                text = (link.inner_text() or "").strip()
+                href = link.get_attribute("href") or ""
+                if text.startswith("@") and len(text) > 1:
+                    candidates.append((text, href))
+            return pick_reply_handle(candidates, author)
+        except Exception:
+            return None
 
     @staticmethod
     def _blocked(page) -> bool:

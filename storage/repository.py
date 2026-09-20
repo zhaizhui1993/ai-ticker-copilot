@@ -132,15 +132,15 @@ def put_x_posts(posts: list[XPost]) -> int:
         return 0
     data = [
         (p.post_id, p.author, p.content, p.url, p.likes,
-         p.posted_at, p.collected_at or _utcnow())
+         p.posted_at, p.collected_at or _utcnow(), p.reply_to)
         for p in posts
     ]
     with get_conn() as conn, conn.cursor() as cursor:
         cursor.executemany(
             """
             INSERT IGNORE INTO x_posts
-              (post_id, author, content, url, likes, posted_at, collected_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+              (post_id, author, content, url, likes, posted_at, collected_at, reply_to)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             data,
         )

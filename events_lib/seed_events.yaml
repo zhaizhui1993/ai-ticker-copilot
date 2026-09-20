@@ -1,8 +1,11 @@
-# 种子事件库（10 条，随仓库版本管理；docs/04-events/seed-events.md）
-# 事实层已定；联动层量化字段（drawdown/drawdown_days/recovery_days/market.*）
-# 由 scripts/backfill_events.py 在 P4 阶段用 yfinance 按日期实测回填后人工核对。
-# 2026-07 条目的量化数据来自 2026-09 复盘实测，回填时可交叉核对。
+# 种子事件库（26 条，随仓库版本管理；docs/04-events/seed-events.md）
+# 数据纪律：
+# - 事实层（日期/机制/关键词）人工整理；联动层量化字段两种来源——
+#   ① tag 含"公开数据待复核"：来自公开报道的硬数字，雅虎恢复后用
+#     scripts/backfill_events.py 实测复核；② tag 含"2026-09复盘实测"：本仓实测。
+# - 正负事件配平（正向 8 条），防止类比永远偏空；单一公告日归因。
 events:
+  # ============ 宏观/贸易（5） ============
   - event_id: 2018-03-us-china-tariff
     name: 中美贸易摩擦启动（301 调查→多轮关税）
     start_date: 2018-03-22
@@ -16,19 +19,60 @@ events:
     market: {}
     tags: [贸易摩擦, 多轮事件]
 
-  - event_id: 2020-02-covid-shock
-    name: 新冠疫情全球冲击
-    start_date: 2020-02-24
-    category: crisis
-    summary: 疫情全球扩散引发流动性危机，美股十日内四次熔断，随后激进财政货币刺激 V 型反转。
-    mechanism: 流动性挤兑强制去杠杆；政策兜底后风险资产快速修复。
-    keywords: [疫情, 熔断, 流动性危机, covid]
+  - event_id: 2019-05-trade-escalation
+    name: 中美贸易谈判破裂与关税升级（5 月轮）
+    start_date: 2019-05-06
+    category: macro
+    summary: 五一后谈判破裂，美方上调对华关税税率并威胁扩展清单，半导体随大盘深度回调。
+    mechanism: 关税与需求不确定性重燃，风险偏好收缩，板块估值压缩。
+    keywords: [关税, 贸易谈判, tariff]
     tickers_affected:
-      - {ticker: SPX, direction: -1, magnitude: 0.8}
-      - {ticker: IXIC, direction: -1, magnitude: 0.8}
+      - {ticker: SMH, direction: -1, magnitude: 0.5, drawdown: -13.6}
     market: {}
-    tags: [危机, V型反转]
+    tags: [贸易摩擦, 第二轮, 公开数据待复核]
 
+  - event_id: 2025-04-liberation-day-tariffs
+    name: 对等关税冲击（Liberation Day）
+    start_date: 2025-04-02
+    category: macro
+    summary: 美国宣布全面对等关税，幅度远超预期，全球风险资产连日暴跌、指数一度跌破 200 日线，4/7-4/8 见底后因暂缓措施 V 型反转。
+    mechanism: 关税超预期引发衰退与滞胀担忧，流动性挤兑式抛售；政策暂缓后空头挤压式修复。
+    keywords: [关税, 对等关税, 解放日, tariff]
+    tickers_affected:
+      - {ticker: SPX, direction: -1, magnitude: 0.8, drawdown: -12.1}
+      - {ticker: NVDA, direction: -1, magnitude: 0.7, drawdown: -22.0}
+      - {ticker: SMH, direction: -1, magnitude: 0.8, drawdown: -24.0}
+    market:
+      vix_peak: 60.1
+    tags: [深冲击原型, 指数破位, V型反转, 公开数据待复核]
+
+  - event_id: 2025-04-tariff-pause-rally
+    name: 关税暂缓引发史诗级反弹（SPX 单日 +9.5%）
+    start_date: 2025-04-09
+    category: macro
+    summary: 对等关税暂缓 90 天，风险资产暴力反弹，SPX 单日上涨 9.5%（二战后第三大单日涨幅），此前抛售的深坑数日收复大半。
+    mechanism: 政策急转弯触发空头挤压与错杀修复。
+    keywords: [关税暂缓, 反弹, 空头挤压]
+    tickers_affected:
+      - {ticker: SPX, direction: 1, magnitude: 0.8}
+      - {ticker: NVDA, direction: 1, magnitude: 0.7}
+    market: {}
+    tags: [正向, 政策反转, 公开数据待复核]
+
+  - event_id: 2024-11-election-risk-on
+    name: 美国大选后风险偏好扩张
+    start_date: 2024-11-06
+    category: macro
+    summary: 大选快速落地消除不确定性，risk-on 交易启动：小盘与加密领涨，半导体受益政策预期，纳指连创历史新高。
+    mechanism: 不确定性溢价回吐+政策预期（放松监管/产业扶持）推升风险资产。
+    keywords: [大选, risk-on, 政策预期]
+    tickers_affected:
+      - {ticker: NDX, direction: 1, magnitude: 0.6}
+      - {ticker: SMH, direction: 1, magnitude: 0.6}
+    market: {}
+    tags: [正向, 风险偏好]
+
+  # ============ 货币政策（5） ============
   - event_id: 2022-03-fed-hike-cycle
     name: 美联储激进加息周期启动
     start_date: 2022-03-16
@@ -37,11 +81,61 @@ events:
     mechanism: 无风险利率抬升压缩长久期资产估值，成长/科技首当其冲。
     keywords: [加息, 通胀, 缩表, fed]
     tickers_affected:
-      - {ticker: IXIC, direction: -1, magnitude: 0.8}
-      - {ticker: NVDA, direction: -1, magnitude: 0.7}
+      - {ticker: IXIC, direction: -1, magnitude: 0.8, drawdown: -31.0, recovery_days: null}
+      - {ticker: NVDA, direction: -1, magnitude: 0.7, drawdown: -37.0}
     market: {}
-    tags: [货币政策, 体制级]
+    tags: [体制级, 货币政策, 公开数据待复核]
 
+  - event_id: 2018-12-fed-hawkish-bottom
+    name: 12 月加息与"自动驾驶"鹰派表态（2018 熊市底）
+    start_date: 2018-12-19
+    category: monetary
+    summary: 年内第四次加息且缩表表述鹰派，恐慌抛售至平安夜见熊市底，随后数月 V 型修复。
+    mechanism: 鹰派表态击穿情绪阈值；估值已深跌，政策转向预期酝酿反转。
+    keywords: [加息, 缩表, 鲍威尔, fomc]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.7, drawdown: -17.5, drawdown_days: 3}
+    market:
+      vix_peak: 36.1
+    tags: [熊市底, 货币政策, 公开数据待复核]
+
+  - event_id: 2019-07-fed-cut-start
+    name: 美联储十年首次降息（预防式）
+    start_date: 2019-07-31
+    category: monetary
+    summary: 十年来首次降息 25bp 并提前结束缩表，预防式宽松开启，风险资产重拾升势、屡创新高。
+    mechanism: 宽松预期压低贴现率，风险偏好修复。
+    keywords: [降息, 缩表结束, 预防式宽松, fed]
+    tickers_affected:
+      - {ticker: SPX, direction: 1, magnitude: 0.6}
+    market: {}
+    tags: [正向, 货币政策]
+
+  - event_id: 2024-09-fed-cut-start
+    name: 降息周期启动（首次即 50bp）
+    start_date: 2024-09-18
+    category: monetary
+    summary: 紧缩周期宣告结束，首次降息即 50bp；科技股随后展开创历史新高的主升段。
+    mechanism: 宽松周期确认利好成长股估值与流动性环境。
+    keywords: [降息, 50基点, 宽松周期, fed]
+    tickers_affected:
+      - {ticker: IXIC, direction: 1, magnitude: 0.7}
+    market: {}
+    tags: [正向, 货币政策]
+
+  - event_id: 2023-10-rates-surge
+    name: 美债收益率飙升冲击（10Y 破 5%）
+    start_date: 2023-10-19
+    category: monetary
+    summary: 十年期美债收益率触及 5%（十六年新高），"更高更久"定价压估值，纳指夏季 AI 行情首现像样回调。
+    mechanism: 无风险利率新高直接压缩科技股估值分母。
+    keywords: [收益率, 美债, 更高更久, 期限溢价]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.4}
+    market: {}
+    tags: [利率冲击]
+
+  # ============ 监管/管制（3） ============
   - event_id: 2022-10-chip-export-rule
     name: 对华先进制程芯片出口管制（10 月 7 日规则）
     start_date: 2022-10-07
@@ -54,31 +148,6 @@ events:
       - {ticker: SMH, direction: -1, magnitude: 0.5}
     market: {}
     tags: [管制, 第一轮]
-
-  - event_id: 2023-03-svb-crisis
-    name: 硅谷银行事件
-    start_date: 2023-03-10
-    category: crisis
-    summary: SVB 因久期错配与挤兑被接管，区域银行危机蔓延，一度冲击科技股风险偏好。
-    mechanism: 存款挤兑引发信用收缩担忧；监管快速兜底后影响集中在区域银行。
-    keywords: [硅谷银行, SVB, 区域银行, 挤兑]
-    tickers_affected:
-      - {ticker: SPX, direction: -1, magnitude: 0.3}
-    market: {}
-    tags: [危机, 传导有限]
-
-  - event_id: 2023-05-ai-rally-start
-    name: NVDA 财报引爆 AI 行情启动
-    start_date: 2023-05-24
-    category: tech
-    summary: 英伟达财报指引大超预期，AI 算力需求叙事获得实证，板块开启持续两年的主升行情。
-    mechanism: 盈利上修驱动估值与业绩戴维斯双击，算力链全面重估。
-    keywords: [AI, 财报, capex, 算力]
-    tickers_affected:
-      - {ticker: NVDA, direction: 1, magnitude: 0.9}
-      - {ticker: SMH, direction: 1, magnitude: 0.7}
-    market: {}
-    tags: [正向基准, 防止类比永远偏空]
 
   - event_id: 2023-10-chip-export-tighten
     name: 对华芯片管制收紧（A800/H800 禁售）
@@ -104,6 +173,86 @@ events:
     market: {}
     tags: [管制, 第三轮]
 
+  # ============ 危机/流动性（4） ============
+  - event_id: 2020-02-covid-shock
+    name: 新冠疫情全球冲击
+    start_date: 2020-02-24
+    category: crisis
+    summary: 疫情全球扩散引发流动性危机，美股十日内四次熔断，随后激进财政货币刺激 V 型反转。
+    mechanism: 流动性挤兑强制去杠杆；政策兜底后风险资产快速修复。
+    keywords: [疫情, 熔断, 流动性危机, covid]
+    tickers_affected:
+      - {ticker: SPX, direction: -1, magnitude: 0.8, drawdown: -33.9, drawdown_days: 23, recovery_days: 126}
+      - {ticker: IXIC, direction: -1, magnitude: 0.8}
+    market:
+      vix_peak: 82.7
+    tags: [体制级, V型反转, 公开数据待复核]
+
+  - event_id: 2023-03-svb-crisis
+    name: 硅谷银行事件
+    start_date: 2023-03-10
+    category: crisis
+    summary: SVB 因久期错配与挤兑被接管，区域银行危机蔓延，一度冲击科技股风险偏好。
+    mechanism: 存款挤兑引发信用收缩担忧；监管快速兜底后影响集中在区域银行。
+    keywords: [硅谷银行, SVB, 区域银行, 挤兑]
+    tickers_affected:
+      - {ticker: SPX, direction: -1, magnitude: 0.3}
+    market: {}
+    tags: [危机, 传导有限]
+
+  - event_id: 2018-02-volmageddon
+    name: VIX 暴涨事件（Volmageddon）
+    start_date: 2018-02-05
+    category: crisis
+    summary: 做空波动率产品反噬引发单日闪崩，VIX 单日翻倍收 37.3，XIV 清盘，波动率策略整体出清。
+    mechanism: 波动率衍生品负反馈螺旋，流动性瞬间枯竭；对基本面无实质影响，数周修复。
+    keywords: [波动率, vix, 闪崩, XIV]
+    tickers_affected:
+      - {ticker: SPX, direction: -1, magnitude: 0.5, drawdown: -4.1, drawdown_days: 0}
+    market:
+      vix_peak: 37.3
+    tags: [流动性事件, 单日, 公开数据待复核]
+
+  - event_id: 2024-08-yen-carry-unwind
+    name: 日元套息交易平仓闪崩
+    start_date: 2024-08-05
+    category: crisis
+    summary: 日央行加息触发套息交易集中平仓，全球股市闪崩、VIX 盘中触及 65；数日内 V 型收复。
+    mechanism: 杠杆套息头寸强制去杠杆引发流动性冲击；头寸出清后迅速修复。
+    keywords: [日元, 套息平仓, 闪崩, 日央行]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.6, drawdown: -13.0, recovery_days: 3}
+    market:
+      vix_peak: 65.7
+    tags: [流动性事件, V型反转, 公开数据待复核]
+
+  # ============ 技术/AI 叙事（5） ============
+  - event_id: 2022-11-gpt-launch
+    name: ChatGPT 发布开启生成式 AI 时代
+    start_date: 2022-11-30
+    category: tech
+    summary: 生成式 AI 首个现象级产品发布，市场重新定价 AI 产业链，云平台与大模型受益股开启长牛。
+    mechanism: 叙事级转折：AI 从概念变为可变现产品，capex 周期预期形成。
+    keywords: [chatgpt, 生成式ai, 大模型, openai]
+    tickers_affected:
+      - {ticker: MSFT, direction: 1, magnitude: 0.6}
+      - {ticker: NVDA, direction: 1, magnitude: 0.8}
+    market: {}
+    tags: [正向, 叙事起点]
+
+  - event_id: 2023-05-ai-rally-start
+    name: NVDA 财报引爆 AI 行情启动
+    start_date: 2023-05-24
+    category: tech
+    summary: 英伟达财报指引大超预期，AI 算力需求叙事获得实证，板块开启持续两年的主升行情。
+    mechanism: 盈利上修驱动估值与业绩戴维斯双击，算力链全面重估。
+    keywords: [ai, 财报, capex, 算力]
+    tickers_affected:
+      - {ticker: NVDA, direction: 1, magnitude: 0.9}
+      - {ticker: SMH, direction: 1, magnitude: 0.7}
+    market: {}
+    tags: [正向基准, 防止类比永远偏空]
+
   - event_id: 2025-01-deepseek-shock
     name: DeepSeek V3/R1 发布冲击算力叙事
     start_date: 2025-01-27
@@ -112,10 +261,22 @@ events:
     mechanism: 低成本模型引发 capex 必要性重估，算力链估值下杀后随需求证伪担忧消退而修复。
     keywords: [deepseek, 开源模型, capex, 算力叙事]
     tickers_affected:
-      - {ticker: NVDA, direction: -1, magnitude: 0.7}
+      - {ticker: NVDA, direction: -1, magnitude: 0.7, drawdown: -17.0, drawdown_days: 0}
       - {ticker: SMH, direction: -1, magnitude: 0.5}
     market: {}
-    tags: [技术冲击, 单日事件, 快速修复]
+    tags: [技术冲击, 单日事件, 快速修复, 公开数据待复核]
+
+  - event_id: 2024-07-growth-rotation
+    name: 成长/价值大轮动回调
+    start_date: 2024-07-11
+    category: tech
+    summary: 温和通胀数据触发降息交易，资金从大型科技轮动至小盘与价值，纳指 100 三周回调约 8%（后段与日元平仓重叠见底）。
+    mechanism: 拥挤的多头头寸再平衡，获利了结式回调而非基本面恶化。
+    keywords: [轮动, 降息交易, 获利了结]
+    tickers_affected:
+      - {ticker: NDX, direction: -1, magnitude: 0.4, drawdown: -8.0}
+    market: {}
+    tags: [板块轮动, 公开数据待复核]
 
   - event_id: 2026-07-ai-valuation-pullback
     name: AI 变现疑虑+美债收益率上行引发半导体集中回调
@@ -127,6 +288,7 @@ events:
     keywords: [AI回调, 收益率, 估值, 半导体]
     tickers_affected:
       - {ticker: "^SOX", direction: -1, magnitude: 0.7, drawdown: -28.6}
+      - {ticker: IXIC, direction: -1, magnitude: 0.6, drawdown: -10.1, drawdown_days: 40}
       - {ticker: BE, direction: -1, magnitude: 0.8, drawdown: -52.7}
       - {ticker: COHR, direction: -1, magnitude: 0.8, drawdown: -47.8}
       - {ticker: MRVL, direction: -1, magnitude: 0.8, drawdown: -47.4}
@@ -135,4 +297,123 @@ events:
       - {ticker: NVDA, direction: -1, magnitude: 0.4, drawdown: -10.6}
     market:
       vix_peak: 20.7
-    tags: [叙事回调, 深回调买点原型, 2026-09复盘实测]
+    tags: [叙事回调, 深回调买点原型, 2026年第二次回调, 2026-09复盘实测]
+
+  # ============ 指数回调波段（2024+ 挖掘批次，5） ============
+  # 纳指口径的波段级回调（阈值 ≥5%，<5% 视为噪声不收录）；
+  # 量化数字来自公开报道锚点，待 mine_events.py 实测复核后摘标签。
+
+  - event_id: 2024-04-inflation-scare-pullback
+    name: 通胀反复引发的科技股回调（2024 年 4 月）
+    start_date: 2024-03-22
+    end_date: 2024-04-19
+    category: macro
+    summary: 连续偏热的通胀数据令降息预期大幅回撤，叠加中东地缘扰动，纳指自 3 月末高点回调；龙头个股回撤显著大于指数。
+    mechanism: 降息时点后移压制估值；拥挤的 AI 多头头寸获利了结。
+    keywords: [通胀, 降息预期回撤, 获利了结]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.4, drawdown: -7.5}
+      - {ticker: NVDA, direction: -1, magnitude: 0.6, drawdown: -20.4}
+    market: {}
+    tags: [指数回调波段, 公开数据待复核]
+
+  - event_id: 2024-12-hawkish-fed-dip
+    name: 12 月鹰派点阵图引发的年末回调
+    start_date: 2024-12-16
+    end_date: 2024-12-20
+    category: monetary
+    summary: FOMC 降息 25bp 但点阵图大幅下调明年降息次数预期，科技股高位跳水，纳指 100 一周内回调约 5% 后企稳。
+    mechanism: 宽松预期修正直接压缩成长股估值。
+    keywords: [鹰派, 点阵图, 降息预期下修]
+    tickers_affected:
+      - {ticker: NDX, direction: -1, magnitude: 0.4, drawdown: -5.2}
+    market: {}
+    tags: [指数回调波段, 浅回调, 公开数据待复核]
+
+  - event_id: 2025-02-tariff-growth-scare
+    name: 关税与增长担忧第一轮冲击
+    start_date: 2025-02-19
+    end_date: 2025-03-13
+    category: macro
+    summary: 关税政策持续加码叠加消费数据走弱，纳指自 12 月历史高点累计回落，3 月中进入回调区；4 月对等关税前已自高位回撤约 14%。
+    mechanism: 政策不确定性+增长放缓双击，风险溢价抬升。
+    keywords: [关税, 增长担忧, 风险溢价]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.7, drawdown: -14.0}
+    market: {}
+    tags: [指数回调波段, 关税第一轮, 公开数据待复核]
+
+  - event_id: 2025-10-late-october-selloff
+    name: 十月末高位回落
+    start_date: 2025-10-21
+    category: tech
+    summary: 纳指与标普 10 月中旬创历史新高后，月末出现陡峭回落，引发对涨势持续性的担忧；深度与归因待实测复核。
+    mechanism: 高位获利了结与月末风险重定价（归因待复核）。
+    keywords: [高位回落, 获利了结]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.4, drawdown: -7.0}
+    market: {}
+    tags: [指数回调波段, 待归因复核, 公开数据待复核]
+
+  - event_id: 2026-03-first-correction
+    name: 纳指 2026 年第一次回调（2 月→4 月初）
+    start_date: 2026-02-02
+    end_date: 2026-04-07
+    category: tech
+    summary: 纳指自 2 月初高位回落，3 月进入回调区（当年第一次），4 月初见 52 周低点后修复。本仓实测同期 NVDA 收盘跌破 MA200（3/20-4/7 共 12 个交易日，最深 -7.9% 于 3/30）；读图口径高点约 23,000-24,000、低点 20,690。
+    mechanism: AI 叙事波动与获利了结（归因待复核）。
+    keywords: [回调, AI波动]
+    tickers_affected:
+      - {ticker: IXIC, direction: -1, magnitude: 0.5, drawdown: -10.5}
+      - {ticker: NVDA, direction: -1, magnitude: 0.5, drawdown: -12.0}
+    market: {}
+    tags: [指数回调波段, 2026年第一次回调, 待归因复核, 公开数据待复核]
+
+  # ============ 公司事件（4） ============
+  - event_id: 2022-02-meta-earnings-crash
+    name: Meta 财报暴雷（单日 -26%）
+    start_date: 2022-02-03
+    category: tech
+    summary: 首份日活下滑财报叠加资本开支大增指引，单日暴跌 26%（当时史上最大单日市值蒸发），成长股估值重估随之开启。
+    mechanism: 用户增长见顶+费用扩张同时兑现，估值双杀；传染至整个高估值成长板块。
+    keywords: [财报, 用户下滑, capex, 估值重估]
+    tickers_affected:
+      - {ticker: META, direction: -1, magnitude: 0.8, drawdown: -26.4, drawdown_days: 0}
+    market: {}
+    tags: [业绩暴雷原型, 公司事件, 公开数据待复核]
+
+  - event_id: 2024-04-intc-earnings-crash
+    name: 英特尔财报暴雷与大规模裁员
+    start_date: 2024-04-25
+    category: tech
+    summary: Q1 指引远逊预期并宣布裁员暂停派息，单日 -9% 后持续走弱，全年深度跑输板块。
+    mechanism: 转型投入挤压盈利+代工亏损扩大，基本面持续下修。
+    keywords: [财报, 指引下修, 裁员, 代工亏损]
+    tickers_affected:
+      - {ticker: INTC, direction: -1, magnitude: 0.7, drawdown: -9.3, drawdown_days: 0, recovery_days: null}
+    market: {}
+    tags: [业绩暴雷原型, 公司事件, 公开数据待复核]
+
+  - event_id: 2024-02-nvda-earnings-gap
+    name: 英伟达财报史诗级跳空（单日市值增 2770 亿美元）
+    start_date: 2024-02-22
+    category: tech
+    summary: Q4 财报与指引再大超预期，股价单日 +24% 创当时史上最大单日市值增量，AI capex 周期获得最强实证。
+    mechanism: 需求可见度空前上修，盈利与估值同步抬升。
+    keywords: [财报, 指引上修, ai, capex]
+    tickers_affected:
+      - {ticker: NVDA, direction: 1, magnitude: 0.9}
+    market: {}
+    tags: [正向, 财报跳空, 公开数据待复核]
+
+  - event_id: 2025-08-intc-stake-rally
+    name: 英特尔获政府协调财团入股大涨（单日 +29%）
+    start_date: 2025-08-22
+    category: tech
+    summary: 白宫协调财团（含英伟达等）入股英特尔的报道引爆估值修复，单日 +29%（二十余年最大单日涨幅），随后数月持续重估。
+    mechanism: 国家战略背书+产业资本入局，破产/边缘化风险定价出清。
+    keywords: [英特尔, 政府入股, 产业资本, 代工]
+    tickers_affected:
+      - {ticker: INTC, direction: 1, magnitude: 0.8}
+    market: {}
+    tags: [正向, 公司事件, 事件反转, 公开数据待复核]

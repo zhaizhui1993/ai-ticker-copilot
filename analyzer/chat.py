@@ -65,9 +65,22 @@ def build_chat_context() -> dict:
     try:
         from storage import repository
         events = repository.list_current_events(limit=8)
+
+        def _reactions(e) -> str:
+            if not e.price_reactions:
+                return ""
+            parts = [
+                f"{r.ticker} 事件日 {r.event_day_pct if r.event_day_pct is not None else '-'}%"
+                f"/前5日 {r.prior_5d_pct if r.prior_5d_pct is not None else '-'}%"
+                f"/距52周高 {r.drawdown_52w if r.drawdown_52w is not None else '-'}%"
+                + (f"/量比 {r.volume_ratio}" if r.volume_ratio is not None else "")
+                for r in e.price_reactions
+            ]
+            return "｜个股反应：" + "；".join(parts)
+
         events_desc = "\n".join(
             f"- [{e.occurred_date}][{e.scope.value}/{e.category.value}] {e.title}"
-            f"（涉及 {'、'.join(e.tickers_mentioned) or '未指明'}）"
+            f"（涉及 {'、'.join(e.tickers_mentioned) or '未指明'}）{_reactions(e)}"
             for e in events) or "（暂无入库事件）"
     except Exception as exc:
         degraded.append(f"事件流读取失败（DB）：{str(exc)[:80]}")
