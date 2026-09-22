@@ -18,16 +18,18 @@
                       magnitude, affected_tickers, analogy_notes}
                               │
                               ▼
-                   ③ 合成类比结论：取 similarity≥0.6 的事件聚合
+                   ③ 合成类比结论（库函数；生产 pipeline 不走此步，直接取②结果 top-3）：
+                      取 similarity≥0.6 的事件聚合
                       "历史上此类事件对 NVDA 的平均影响：
                        最大回撤 x%，达底 y 天，恢复 z 天"
-                      → 输入事件面打分与最终 LLM prompt
 ```
 
 ## 约定
 
 - **不用 embedding 的理由**：事件库几十条规模，硬检索 + LLM 精排性价比最高，省 embedding API 成本与一个依赖；库超 ~200 条再升级向量检索（演进路径见 [09-delivery/evolution.md](../09-delivery/evolution.md)）。
-- **降级路径**：LLM 不可用时直接用硬检索 top-2 输出类比，标注"低置信类比（未过 LLM 校验）"，`confidence='low'`。
-- **样本量保护（v1.1）**：同类事件 n<3 时输出"样本不足，仅供参考"而非平均值。
-- **正向事件必须入种子库**（2023-05 AI 行情启动），否则类比永远偏空——这是种子库设计的硬约束。
-- 接口签名（hard_retrieve / llm_rerank / synthesize_analogy）见 [10-module-contracts.md §10.2②](../10-module-contracts.md)；LLM 精排 prompt 见 [06-analyzer/prompts.md](../06-analyzer/prompts.md)。
+- **LLM 精排接线位置（P6 起）**：生产路径在 `analyzer/pipeline.run_analysis` 内联执行①②——`llm.rerank_matches(event, candidates)`（真 LLM，供应商无关）返回 None（无 key/失败/结果非法）时回落 `matcher.rule_rerank`（可解释成分：category 0.3 + 关键词覆盖 0.4 + 标的 0.2 + 月份 0.1）。`matcher.llm_rerank` 当前为占位别名（直接委托 rule_rerank），`match_event / match_event_degraded / synthesize_analogy` 为库函数（测试与未来复用），生产 pipeline 每事件直接取**精排结果 top-3** 喂 EventScorer 与"最强类比"文案，不做③的聚合。
+- **置信度语义**：规则版精排全程 `confidence='low'`（note 标注"未经 LLM 校验"）；LLM 精排结果的 similarity 由 LLM 打分。
+- **降级路径**：LLM 不可用时直接用硬检索/规则精排结果输出类比，标注"低置信类比（未过 LLM 校验）"，`confidence='low'`。
+- **样本量保护（v1.1）**：synthesize_analogy 中同类事件 n<3 时输出"样本不足，仅供参考"而非平均值。
+- **正向事件必须入种子库**（2023-05 AI 行情启动等 8 条正向基准），否则类比永远偏空——这是种子库设计的硬约束。
+- 接口签名（hard_retrieve / rule_rerank / llm_rerank / synthesize_analogy）见 [10-module-contracts.md §10.2②](../10-module-contracts.md)；LLM 精排 prompt 见 [06-analyzer/prompts.md](../06-analyzer/prompts.md)。

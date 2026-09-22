@@ -5,7 +5,7 @@
 
 ## 加权汇总
 
-默认权重 0.25×4（`scoring_weights.yaml` 可调，校验合计=1.0）；总分 = Σ wᵢ·sᵢ。
+默认权重 0.25×4（`scoring_weights.yaml` 可调）；`Engine(weights)` 构造时校验权重合计=1.0，非法即抛错拒启。总分 = Σ wᵢ·sᵢ；输出 `EngineOutput`（四维分 + `regime_note` 体制层备注）。
 
 ## 信号分档
 
@@ -20,4 +20,4 @@
 
 ## 体制层硬约束（v1.1 新增）
 
-当 [layered-technicals.md](layered-technicals.md) 体制层判定破位（两个及以上指数收盘 < MA200，或任一指数 < MA200 且 VIX>25）时，所有个股信号档位上限压至"观望"；LLM 如需上偏必须额外援引事件类比依据。该约束保证"环境关门时不看多任何个股"，宏观/事件环境不进入加权求和、只做门槛。
+当 [layered-technicals.md](layered-technicals.md) 体制层判定破位（两个及以上指数收盘 < MA200，或任一指数 < MA200 且 VIX>25，`IndexRegime.regime_broken()`）时，Engine 把四维档位上限压至"中性偏多"（积极 → 中性偏多，`regime_note` 标注）；最终**信号动作**上限压至"观望"由规则研判 `rule_judge`（无 LLM 时）与综合研判 prompt 规则 5（有 LLM 时）执行。该约束保证"环境关门时不看多任何个股"，宏观/事件环境不进入加权求和、只做门槛。体制层数据获取失败时按"未破位"中性处理并标注。

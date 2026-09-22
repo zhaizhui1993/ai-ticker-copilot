@@ -5,7 +5,7 @@
 
 ## 职责
 
-FRED 官方 API（fred-py-api，免费 key，120 req/min）拉取宏观系列，接口 `get_series(series_id) -> MacroPoint`：
+FRED 官方 API（httpx 直连 `api.stlouisfed.org/fred/series/observations`，免费 key，120 req/min；pyproject 中 fred-py-api 为预留依赖，当前未使用）拉取宏观系列。接口：`get_series(series_id) -> MacroPoint`（单系列）与 `get_all() -> dict[str, MacroPoint | None]`（7 系列批量，单系列失败以 None 占位不中断）：
 
 | 系列 id | 指标 | 用途 |
 |---|---|---|
@@ -20,5 +20,5 @@ FRED 官方 API（fred-py-api，免费 key，120 req/min）拉取宏观系列，
 ## 约定
 
 - TTL 12h（日频数据，高频无意义）；
-- 系列 id 可在 settings 配置，评分规则表见 [05-scoring/macro-score.md](../05-scoring/macro-score.md)；
+- 系列清单为模块内硬编码（`FRED_SERIES` 元组，7 系列），settings 仅配 `FRED_API_KEY`；评分规则表见 [05-scoring/macro-score.md](../05-scoring/macro-score.md)；
 - key 未填/失败：宏观分降级中性并标注"宏观数据缺失"（降级协议见 [10-module-contracts §10.5](../10-module-contracts.md)）。

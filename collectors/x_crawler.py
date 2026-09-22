@@ -1,10 +1,12 @@
-"""X 爬虫（Playwright）。规格：docs/03-collectors/x-crawler.md
+"""X 爬虫（Playwright，X_MODE=crawl 通道）。规格：docs/03-collectors/x-crawler.md
 
 - 登录态：storage_state 注入（scripts/export_x_cookie.py 导出）；失效抛 XCookieExpired
 - 抓取：串行每博主，等 tweet 元素 → 滚动 3~5 次 → 提取正文/时间/链接；抓取时不调 LLM
 - 防风控：每博主每天最多 1 次（crawl_state 节流）、博主间随机 30~90s、
   异常（登录墙/Something went wrong）立即终止本轮不硬刚
 - 过滤：48h 内且命中关注词（股票池 ticker / $ / AI/chip/Fed/tariff 等）
+- 路由与节流/入库编排在 collectors/x_source.py（与 X_MODE=api 通道共用）；
+  本模块的 filter_posts 等纯函数被 API 通道复用
 """
 
 import random
@@ -205,19 +207,3 @@ class XCollector:
         return ("something went wrong" in content or "try again" in content
                 or 'action="https://x.com/login"' in content
                 or "log in to x" in content)
-
-
-def crawl_and_store(influencers: list[InfluencerConfig], pool_tickers: list[str]) -> dict:
-    """CLI/调度入口：节流 → 抓取 → 入库（post_id 去重）。"""
-    from storage import repository
-
-    to_crawl = [inf for inf in influencers
-                if repository.try_crawl_lock(f"x:{inf.handle}")]
-    throttled = [inf.handle for inf in influencers if inf not in to_crawl]
-    if not to_crawl:
-        return {"posts": [], "stored": 0, "throttled": throttled,
-                "skipped": [], "error": None}
-
-    outcome = XCollector().crawl(to_crawl, pool_tickers)
-    stored = repository.put_x_posts(outcome["posts"]) if outcome["posts"] else 0
-    return {**outcome, "stored": stored, "throttled": throttled}

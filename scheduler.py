@@ -62,16 +62,20 @@ def full_analysis_job() -> None:
 
 
 def crawl_x_job() -> None:
-    """③ X 低频抓取（每博主每天 1 次节流）。"""
-    from collectors.x_crawler import crawl_and_store
+    """③ X 低频抓取（每博主每天 1 次节流；X_MODE=api|crawl|off 路由）。"""
+    from collectors.x_source import crawl_and_store
     from config.loader import load_influencers
+    from config.settings import settings as cfg
 
+    if cfg.x_mode == "off":
+        return
     influencers = load_influencers()
     if not influencers:
         return
     try:
         outcome = crawl_and_store(influencers, _pool_tickers())
-        print(f"[scheduler] X 抓取：{len(outcome['posts'])} 条，入库 {outcome['stored']}")
+        print(f"[scheduler] X 抓取（{outcome.get('mode', cfg.x_mode)}）："
+              f"{len(outcome['posts'])} 条，入库 {outcome['stored']}")
         if outcome.get("error"):
             print(f"[scheduler] X 抓取终止：{outcome['error']}")
     except Exception as exc:

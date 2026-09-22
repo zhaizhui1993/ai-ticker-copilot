@@ -1,4 +1,4 @@
-"""Web 服务层（FastAPI）：五个路由组 + 静态前端 + lifespan。
+"""Web 服务层（FastAPI）：六个路由组 + 静态前端 + lifespan。
 
 - lifespan：建库建表 + 种子 upsert；SKIP_DB_CHECK=true 时 DB 失败仅警告
   （开发逃生门，默认保持"启动即失败"的严格语义，docs/07-storage/db-ddl.md）

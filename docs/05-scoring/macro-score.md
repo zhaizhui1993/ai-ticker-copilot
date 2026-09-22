@@ -12,6 +12,7 @@
 | UNRATE 失业率 | <4.5% 稳定 | 3 个月升 0.5pct 以上 | 10% |
 | ^VIX（yfinance） | <15 | >25 | 10% |
 
-- 每项映射 0-100 后按子权重加权；FRED 系列 id 可在 settings 配置（v1.1 新增核心 PCE / HY 利差作为参考输入与 LLM 原始上下文，见 [03-collectors/macro.md](../03-collectors/macro.md)）。
+- 每项映射 0-100 后按子权重加权（各项判分细节随 `sub_*` 指标键落库，供 LLM/回放核对）；FRED 系列清单为 macro.py 模块内硬编码（v1.1 新增核心 PCE / HY 利差作为参考输入与 LLM 原始上下文，不进子权重表，见 [03-collectors/macro.md](../03-collectors/macro.md)）。
+- **口径近似说明**：CPI 同比为月环比年化代理（非官方同比）、失业率/利率的"3 个月趋势"用最近两期方向近似——个人工具够用，rationale 中保留原始值供人工判读。
 - rationale 示例："联邦利率高位持平、CPI 同比 2.8% 持续回落，宏观面中性偏多。"
 - FRED key 未填/失败：降级中性 50 分并标注"宏观数据缺失"。

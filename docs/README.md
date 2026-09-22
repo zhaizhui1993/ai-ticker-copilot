@@ -5,6 +5,7 @@
 > 本目录由单文件方案《股市》（v1.1）拆分而来，原文件保留作全文存档；后续更新以本目录为准。
 > v1.1 修订要点：技术面分层指标体系（[05-scoring/layered-technicals.md](05-scoring/layered-technicals.md)）、破位×事件分级规则（[04-events/breach-classification.md](04-events/breach-classification.md)）、当前事件自动沉淀（[04-events/auto-sedimentation.md](04-events/auto-sedimentation.md)）、种子事件库扩充至 10 条（[04-events/seed-events.md](04-events/seed-events.md)）、体制层硬约束（[05-scoring/engine.md](05-scoring/engine.md)）。
 > **v1.2 修订：LLM 供应商无关化**——移除对 DeepSeek 的绑定，密钥/端点/模型名统一为 `LLM_*` 环境变量，任意 OpenAI 兼容大模型可切换（见 [06-analyzer/provider.md](06-analyzer/provider.md)）。
+> **实施期增补（2026-09）**：种子库扩至 31 条（含 2024+ 纳指全部波段回调）、回调波段挖掘器（[04-events/mine.md](04-events/mine.md)）、当前事件价格反应富化（[04-events/reaction.md](04-events/reaction.md)）、对话式研究助理（analyzer/chat.py，见 [06-analyzer](06-analyzer/README.md)）、X 双通道（[03-collectors/x-api.md](03-collectors/x-api.md)：X_MODE=api/crawl/off，含回复抓取与 reply_to 字段）。
 
 ## 目录结构
 
@@ -14,8 +15,8 @@ docs/
 ├── 10-module-contracts.md     # 模块交互与接口契约（横切规范）
 ├── 01-overview/               # 总览与架构（背景 / 架构 / 选型 / 目录结构）
 ├── 02-domain-models/          # 数据模型（用户配置 / 事件与信号模型）
-├── 03-collectors/             # 数据采集层（缓存基座 / market / macro / 新闻管道 / X 爬虫 / 调度器）
-├── 04-events/                 # 历史事件库（schema / 种子 / 初始化 / 自动沉淀 / 匹配 / 分级 / 日历）
+├── 03-collectors/             # 数据采集层（缓存基座 / market / macro / 新闻管道 / X 双通道 api·crawl / 调度器）
+├── 04-events/                 # 历史事件库（schema / 31 条种子 / 初始化 / 挖掘器 / 价格反应 / 自动沉淀 / 匹配 / 分级 / 日历）
 ├── 05-scoring/                # 评分引擎（四维 scorer / 分层指标 / engine）
 ├── 06-analyzer/               # LLM 研判层（接入 / 调用边界 / prompts）
 ├── 07-storage/                # 存储层（DDL / 事务）
@@ -30,7 +31,7 @@ docs/
 | [01-overview/](01-overview/README.md) | 总览与架构 | 全局 | — | P0 |
 | [02-domain-models/](02-domain-models/README.md) | 数据模型 | domain/ + config_files/ | 01 | P1 |
 | [03-collectors/](03-collectors/README.md) | 数据采集层 | collectors/ + scheduler.py | 02, 07 | P3 / P7 / P9 |
-| [04-events/](04-events/README.md) | 历史事件库与类比 | events_lib/ + scripts | 02, 03, 05 | P2 / P4 / P9 |
+| [04-events/](04-events/README.md) | 历史事件库与类比 | events_lib/ + scripts | 02, 03, 05 | P2 / P4 / P9 / 增补（挖掘器·价格反应） |
 | [05-scoring/](05-scoring/README.md) | 评分引擎 | scoring/ | 02, 03, 04 | P5 |
 | [06-analyzer/](06-analyzer/README.md) | LLM 研判层 | analyzer/ + prompts/ | 04, 05 | P6 |
 | [07-storage/](07-storage/README.md) | 存储层 | storage/ | 02 | P2 |
@@ -75,5 +76,5 @@ docs/
 ## 待确认事项（原附录 B）
 
 1. 实施前确定所用大模型，填 `LLM_BASE_URL / LLM_API_KEY / LLM_MODEL`（任意 OpenAI 兼容端点：GPT / Qwen / GLM / Kimi / DeepSeek 等均可）。
-2. 新闻 RSS 默认源清单（Reuters/CNBC/MarketWatch 等）实施时确认可达性。
+2. 新闻 RSS 默认源清单（CNBC/MarketWatch/YahooFinance 等）实施时确认可达性；Reuters 公开 RSS 已停服不列入。
 3. 种子事件的量化回填需实施时用 yfinance 实测，与记忆中的市场数据可能有出入，以实测为准。

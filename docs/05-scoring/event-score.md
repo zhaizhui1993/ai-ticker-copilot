@@ -9,8 +9,8 @@
 新鲜度衰减 = 0.5 ^ (事件距今天数 / 7)      # 半衰期 7 天
 ```
 
-- 历史事件未直接列出该标的时，按同 segment 的历史影响取 0.5 折扣。
-- X 情绪分：已打标帖子按 ticker 聚合，正帖占比 50% 映射为中性 50 分，线性映射至 0-100。
+- 历史事件未直接列出该标的时一律乘 0.5 折扣（不做 segment 匹配，当前为简化口径）。
+- **新鲜度加权在 pipeline 层完成**：每事件只取精排结果 **top-3**，匹配对携带 `(事件距今天数)` 一并传入（见 [10-module-contracts §10.2③](../10-module-contracts.md)）。
+- X 情绪分：设计为"已打标帖子按 ticker 聚合，正帖占比线性映射 0-100"；**打标函数 label_sentiment 尚未实现**，pipeline 当前恒传 `x_sentiment=None` → 情绪腿计 50（中性）并标注"X 数据缺失"（存储侧 `get_unlabeled_posts`/`mark_sentiment` 已就绪，见 [03-collectors/x-crawler.md](../03-collectors/x-crawler.md)）。
 - 总分 = 50 + 类比分×40 + (情绪分-50)×0.2，截断 [0,100]。
-- X 数据缺失时情绪分计 50（中性），rationale 标注"X 数据缺失"。
-- 输入来源：类比结论由 [04-events/matcher.md](../04-events/matcher.md) 产出；情绪标签由 [06-analyzer/calls.md](../06-analyzer/calls.md) 的 label_sentiment 回填 x_posts。
+- 输入来源：类比匹配结果由 [04-events/matcher.md](../04-events/matcher.md)（经 analyzer/llm.rerank_matches 精排）产出。

@@ -13,8 +13,19 @@ class EventScope(str, Enum):
     INDUSTRY = "industry"           # 行业事件（AI 产业链）
     COMPANY = "company"             # 企业事件（财报/订单/事故/管理层）
 
+class PriceReaction(BaseModel):
+    """事件关联个股的价格反应（入库时由 events_lib/reaction.py 富化）"""
+    ticker: str
+    event_day_pct: float | None = None    # 事件日涨跌（未收盘取最近已收交易日）
+    prior_5d_pct: float | None = None     # 事件前 5 日累计（不含事件日）
+    prior_20d_pct: float | None = None    # 事件前 20 日累计
+    drawdown_52w: float | None = None     # 事件时点距 52 周高点回撤 %
+    volume_ratio: float | None = None     # 事件日量比
+    as_of: date | None = None             # 反应计算所用的最后交易日
+    note: str = ""                        # 截断口径标注
+
 class CurrentEvent(BaseModel):
-    event_id: str              # "2026-09-17-001"
+    event_id: str              # "2026-09-20-001"
     title: str
     occurred_date: date
     scope: EventScope          # 事件层级（宏观政策/国际热点/行业/企业）
@@ -24,11 +35,12 @@ class CurrentEvent(BaseModel):
     tickers_mentioned: list[str]
     source: str                # 新闻来源
     raw_url: str = ""          # 原文链接（去重键之一）
+    price_reactions: list[PriceReaction] = []  # 入库时富化（04-events/reaction.md）
 ```
 
 scope 与 category 正交：例如"对华芯片管制升级"scope=GEOPOLITICAL、category=REGULATION；"NVDA 财报"scope=COMPANY、category=TECH。前端按 scope 四类展示，类比匹配用 category。
 
-抽取策略：RSS/WebSearch 抓取当日标题摘要 → 规则预过滤（命中宏观/贸易/管制/AI 关键词）→ **LLM 批量一次调用**（10~20 条一批）抽取结构化事件，控制成本（管道细节见 [03-collectors/news-pipeline.md](../03-collectors/news-pipeline.md)）。
+抽取策略：RSS + Google News 主题流抓取 48h 内标题摘要 → 规则预过滤（命中宏观/贸易/管制/AI 关键词，analyzer/rule_extract.py）→ **LLM 批量一次调用**（10~20 条一批）抽取结构化事件，控制成本；无 key 自动降级规则版抽取（管道细节见 [03-collectors/news-pipeline.md](../03-collectors/news-pipeline.md)）。
 
 ## 5.5 信号模型（LLM 结构化输出）
 

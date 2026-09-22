@@ -12,8 +12,9 @@
 | P4 事件库 1d | build_events.py 事实层生成、backfill_events.py 量化回填、matcher 两级匹配 | 事实层日期经双源交叉验证；回填数字与公开报道吻合；构造"对华管制升级"假事件应命中 2023-10 轮次 | 04 |
 | P5 评分 1d | 四 scorer + engine | pytest：各维分数方向/区间正确、权重生效 | 05 |
 | P6 LLM 研判 1d | llm.py、prompts、pipeline | `analyze.py --ticker NVDA` 真实跑通，输出信号+免责声明 | 06 |
-| P7 X 爬虫 1d | export_x_cookie、x_crawler、打标 | `crawl_x.py` 抓到帖子入库，打标正确 | 03(x-crawler) |
-| P8 Web 1.5d | FastAPI api/*、前端五页签、vendor 本地化 | 浏览器全流程：刷新→分析→看卡片/图表/类比/历史 | 08 |
-| P9 收尾 1d | **调度器三类任务**、新事件通知、经济日历、自动沉淀、MOCK_MODE 全链路、README | mock 模式端到端；真实模式事件轮询稳定运行 24h，无重复入库、单源失效不影响整体 | 03(scheduler)、04(auto/calendar) |
+| P7 X 采集 1d | export_x_cookie、x_crawler、打标 | `crawl_x.py` 抓到帖子入库（**实施期增补：x_source 双通道路由 + x_api（twitterapi.io）+ reply_to 回复抓取**；打标管线为规划） | 03(x-api/x-crawler) |
+| P8 Web 1.5d | FastAPI api/*、前端页签、vendor 本地化 | 浏览器全流程：刷新→分析→看卡片/图表/事件/历史（**实施期增补：第六页签"对话"研究助理**） | 08 |
+| P9 收尾 1d | **调度器四类任务**（+自动沉淀）、新事件通知、经济日历、MOCK_MODE 全链路、README | mock 模式端到端；真实模式事件轮询稳定运行 24h，无重复入库、单源失效不影响整体 | 03(scheduler)、04(auto/calendar) |
+| **实施期增补（P9 后，2026-09）** | 回调波段挖掘器（mine/mine_events，种子库 26→31 条）；当前事件价格反应富化（reaction，随管道入库）；X 双通道与 API 通道（x_source/x_api，15 测试）；对话式研究助理（analyzer/chat + /api/chat，4 测试） | mine_events 检出波段与公开复盘吻合；事件行携带价格反应徽章；X_MODE=api 免登录抓帖+回复+引用；对话页签可多轮追问 | 04(mine/reaction)、03(x-api)、06/08(chat) |
 
 依赖顺序：P2←P1，P4←P2/P3，P6←P4/P5，P8←全部。总工作量约 9~11 个业余工作日。

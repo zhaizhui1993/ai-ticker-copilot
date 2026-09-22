@@ -1,7 +1,7 @@
-# 02-数据模型 ｜ 用户配置文件（stocks.yaml / influencers.yaml）
+# 02-数据模型 ｜ 用户配置文件（stocks.yaml / influencers.yaml / scoring_weights.yaml）
 
-> 模块：02 数据模型 ｜ 成分：用户 YAML 配置 ｜ 对应代码：config_files/、domain/stock.py ｜ 实施阶段：P1
-> 来源：原方案 §5.1 / §5.2
+> 模块：02 数据模型 ｜ 成分：用户 YAML 配置 ｜ 对应代码：config_files/、config/loader.py、domain/stock.py ｜ 实施阶段：P1
+> 来源：原方案 §5.1 / §5.2；scoring_weights.yaml 见 05 交叉引用
 
 ## 5.1 股票池配置（config_files/stocks.yaml）
 
@@ -27,4 +27,8 @@ influencers: []
 #     tickers: [NVDA]       # 主要跟踪标的（可选，用于帖子→股票弱关联）
 ```
 
-同样 gitignore + example 模板复制。单轮抓取上限 `MAX_X_BLOGGERS_PER_RUN`（默认 5）。
+同样 gitignore + example 模板复制。单轮抓取上限 `MAX_X_BLOGGERS_PER_RUN`（默认 5；api/crawl 两通道共用，当前按博主列表全量执行，该上限为配置预留）。博主列表由调用方（scheduler / scripts/crawl_x.py）经 config/loader.py 加载后传入 x_source 路由。
+
+## 5.3 四维权重配置（config_files/scoring_weights.yaml，随仓库提交）
+
+第三份 YAML：四维评分权重（macro/event/industry/company，默认 0.25×4）。启动时校验合计必须 = 1.0，非法即拒启。规格与消费方式见 [05-scoring/engine.md](../05-scoring/engine.md)。

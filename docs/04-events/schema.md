@@ -13,8 +13,8 @@ class EventCategory(str, Enum):
 
 class TickerImpact(BaseModel):
     ticker: str                     # 标的（个股/ETF/指数，如 NVDA、SMH、SPX、IXIC）
-    direction: int                  # -1 负 / 0 中性 / +1 正
-    magnitude: float                # 影响强度 0~1
+    direction: Literal[-1, 0, 1]    # -1 负 / 0 中性 / +1 正
+    magnitude: float                # 影响强度 0~1（ge=0, le=1 约束）
     drawdown: float | None          # 最大回撤 %（如 -20.3）
     drawdown_days: int | None       # 达底自然天数
     recovery_days: int | None       # 收复前高天数（None=至今未收复）
@@ -41,4 +41,4 @@ class HistoricalEvent(BaseModel):
     tags: list[str]
 ```
 
-> 配套的当前事件模型（EventScope / CurrentEvent）与信号模型见 [02-domain-models/event-signal-models.md](../02-domain-models/event-signal-models.md)；匹配产物 EventMatchResult / AnalogyConclusion 的契约见 [10-module-contracts.md §10.2②](../10-module-contracts.md)。
+> 配套的当前事件模型（EventScope / PriceReaction / CurrentEvent）与信号模型见 [02-domain-models/event-signal-models.md](../02-domain-models/event-signal-models.md)——**PriceReaction**（事件关联个股的价格反应五指标，入库时由 events_lib/reaction.py 富化，详见 [reaction.md](reaction.md)）挂在 CurrentEvent.price_reactions 上；匹配产物 EventMatchResult / AnalogyConclusion 的契约见 [10-module-contracts.md §10.2②](../10-module-contracts.md)。
