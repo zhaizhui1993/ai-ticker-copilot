@@ -124,23 +124,27 @@ class MacroScorer:
     def score(self, series: dict[str, MacroPoint | None], vix: float | None = None) -> ScoreBreakdown: ...
 class EventScorer:
     def score(self, ticker: str, matches: list[tuple[EventMatchResult, int]] | None,
-              x_sentiment: float | None = None) -> ScoreBreakdown: ...
-        # matches = (精排结果, 事件距今天数) 列表（新鲜度衰减在评分内算）；None → 中性50+标注
+              x_sentiment: float | None = None,
+              category_by_event: dict[str, str] | None = None) -> ScoreBreakdown: ...
+        # matches = (精排结果, 事件距今天数) 列表（新鲜度衰减在评分内算，按 category 分类型半衰期）；
+        # x_sentiment=None → 情绪腿剔除、类比权重重归一化（v1.2）
 class IndustryScorer:
     def score(self, segment: str, bars_by_symbol: dict[str, list[DailyBar]],
               spy_bars: list[DailyBar] | None = None,
-              financials: Financials | None = None,      # pipeline 当前未喂 → 财报动量子项恒中性
-              ai_word_delta: float | None = None) -> ScoreBreakdown: ...   # 同上，AI 景气度恒中性
+              financials: dict[str, Financials] | None = None,   # pipeline 当前未喂 → 财报动量腿剔除（重归一化）
+              ai_word_delta: float | None = None) -> ScoreBreakdown: ...   # 同上，AI 景气度腿剔除
 class CompanyScorer:
-    def score(self, ticker: str, bars: list[DailyBar],
-              fin: Financials | None = None) -> ScoreBreakdown: ...        # fin 缺失 → 基面子项中性
+    def score(self, ticker: str, bars: list[DailyBar], fin: Financials | None = None,
+              segment: str | None = None) -> ScoreBreakdown: ...
+        # 子腿数据缺失 → 剔除并重归一化（v1.2）；segment 用于周期段估值封顶（equipment/foundry）
 class Engine:
     def __init__(self, weights: dict[str, float] | None = None): ...      # 权重合计≠1.0 即抛错
     def run(self, four: FourDimScores, regime: IndexRegime) -> EngineOutput: ...
-        # EngineOutput: weighted_total + 分档 + regime_note（体制层硬约束：破位时档位上限压至中性偏多）
+        # EngineOutput: weighted_total + 分档 + regime_note + position_cap + company_gate_applied
+        # （体制层分级约束：破位时档位≤中性偏多 + 仓位系数 0.3；公司分<35 档位封顶——均 v1.2）
 ```
 
-**契约要点**：Scorer 是**纯函数**（同输入同输出、无 IO、无 LLM）；规则参数集中在文件顶部常量区；体制层硬约束只在 Engine 施加，Scorer 不感知。
+**契约要点**：Scorer 是**纯函数**（同输入同输出、无 IO、无 LLM）；规则参数集中在文件顶部常量区；体制层分级约束与公司面短板门槛只在 Engine 施加，Scorer 不感知。
 
 **④ LLM 层（analyzer/llm.py，结构化调用均 `with_structured_output(method="function_calling")`；全部同步函数）**
 
@@ -199,7 +203,7 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
 | # | 数据 | 生产者 | 消费者 | 载体 / 格式 | 时效 / 频率 |
 |---|---|---|---|---|---|
 | 1 | 日线与技术原始数据 | 03 market.py | 05 评分、08 Web | `DailyBar[]`（内存）→ snapshots 表 | 分级 TTL（15min/12h/24h） |
-| 2 | 指数体制层状态 | 03 market.py | 05 Engine（硬约束）、04 §6.2.1 分级 | `IndexRegime` | 按需计算（15min TTL） |
+| 2 | 指数体制层状态 | 03 market.py | 05 Engine（分级约束）、04 §6.2.1 分级 | `IndexRegime` | 按需计算（15min TTL） |
 | 3 | 宏观序列 | 03 macro.py | 05 MacroScorer | `dict[str, MacroPoint]`（get_all） | 12h TTL |
 | 4 | 原始文章 | 03 news.py | 06 extract_events | `RawArticle[]`（去重键 raw_url+标题hash） | 轮询即消费 |
 | 5 | 当前事件（含价格反应） | 06 extract_events + 04 reaction 富化 | 06 pipeline 匹配、08 事件中心、06 chat 上下文 | CurrentEvent（含 price_reactions）→ **current_events 表** | 准实时 |
@@ -237,7 +241,7 @@ scheduler ──► news.poll_once(pool_tickers) ──► [内置 RSS / NEWS_RS
   │ 1  取数：逐票 get_daily_bars/get_financials + get_index_regime + macro.get_all
   │    （X 不在此链路——由调度器每日 ET 9:00 独立任务抓取）
   │ 2  取最近当前事件 → matcher.hard_retrieve(top-5) → llm.rerank_matches（None 则 rule_rerank）→ 每事件 top-3
-  │ 3  四个 Scorer 打分 → FourDimScores → Engine.run()（体制层硬约束：破位时档位上限压至中性偏多）
+  │ 3  四个 Scorer 打分 → FourDimScores → Engine.run()（体制层分级约束：破位档位≤中性偏多+仓位系数0.3；公司分<35 档位封顶）
   │ 4  llm.judge(ctx, ticker_ctx)（无 key → rule_judge）→ AnalysisResult
   └ 5  repository.upsert_snapshot()（同日覆盖）+ append_analysis_run() → 返回 {result, outputs, regime, db_saved, cached}
 ```

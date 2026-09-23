@@ -1,9 +1,14 @@
-# 种子事件库（31 条，随仓库版本管理；docs/04-events/seed-events.md）
+# 种子事件库（43 条，随仓库版本管理；docs/04-events/seed-events.md）
 # 数据纪律：
 # - 事实层（日期/机制/关键词）人工整理；联动层量化字段两种来源——
 #   ① tag 含"公开数据待复核"：来自公开报道的硬数字，雅虎恢复后用
 #     scripts/backfill_events.py 实测复核；② tag 含"2026-09复盘实测"：本仓实测。
 # - 正负事件配平（正向 8 条），防止类比永远偏空；单一公告日归因。
+# - v1.3 新增三类对照（评审 P1-2：防"全是咬人的狗"高估冲击）：
+#   ① fizzled=true：雷声大雨点小的对照事件，浅回撤参与 base-rate 平均修正高估；
+#   ② 快速收复危机：真实冲击但 V 型，修正"恢复天数"的悲观估计；
+#   ③ 机制类比（pre-2018）：产业结构已变，仅机制层面可比，tags 显式标注。
+# - pre-state（事件前状态）字段由 scripts/backfill_pre_state.py 回填，人工不填。
 events:
   # ============ 宏观/贸易（5） ============
   - event_id: 2018-03-us-china-tariff
@@ -417,3 +422,160 @@ events:
       - {ticker: INTC, direction: 1, magnitude: 0.8}
     market: {}
     tags: [正向, 公司事件, 事件反转, 公开数据待复核]
+
+  # ============ fizzled 对照：雷声大雨点小（v1.3，修正冲击高估） ============
+  - event_id: 2023-10-ai-executive-order
+    name: 拜登签署 AI 行政令（预期监管冲击未兑现）
+    start_date: 2023-10-30
+    category: regulation
+    summary: 市场一度预期 AI 监管收紧将压制板块，行政令实际以安全评估与自愿承诺为主，无强制力，板块数日窄幅震荡后延续上行。
+    mechanism: 预期中的监管冲击落地为柔性框架，不确定性溢价回落而非风险溢价上升。
+    keywords: [ai监管, 行政令, 白宫, regulation]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.2, drawdown: -3.5}
+      - {ticker: NVDA, direction: -1, magnitude: 0.2, drawdown: -4.0}
+    market: {}
+    tags: [fizzled, 监管传闻, 公开数据待复核]
+    fizzled: true
+
+  - event_id: 2024-04-iran-israel-strike
+    name: 伊朗首次本土袭击以色列（地缘恐慌一日游）
+    start_date: 2024-04-13
+    category: crisis
+    summary: 伊朗无人机与导弹首次本土袭击以色列，周末恐慌拉满，周一美股低开后当日基本收复，随 后淡化（次周焦点回到财报）。
+    mechanism: 预期内的报复行动+拦截成功，尾部风险定价快速回落。
+    keywords: [地缘冲突, 伊朗, 以色列, 导弹]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.2, drawdown: -2.7}
+      - {ticker: SPY, direction: -1, magnitude: 0.1, drawdown: -1.5}
+    market: {}
+    tags: [fizzled, 地缘冲突, 快速收复, 公开数据待复核]
+    fizzled: true
+
+  - event_id: 2024-07-biden-withdraws
+    name: 拜登宣布退出连任竞选（政治不确定性冲击快速消化）
+    start_date: 2024-07-21
+    category: macro
+    summary: 现任总统竞选周期中退选引发政治不确定性，指数两个交易日回落约 2~3% 后收复，科技板块影响甚微。
+    mechanism: 政治扰动对科技盈利路径无传导，波动率事件而非盈利事件。
+    keywords: [大选, 拜登, 政治不确定性]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.2, drawdown: -4.0}
+    market: {}
+    tags: [fizzled, 政治事件, 快速收复, 公开数据待复核]
+    fizzled: true
+
+  - event_id: 2024-05-ai-bubble-debate
+    name: "高盛报告引发 AI 泡沫争论（支出过大收益太小）"
+    start_date: 2024-05-28
+    category: tech
+    summary: 高盛研究报告质疑 AI 基建投入回报，叠加巴菲特减持苹果传闻，板块当周回调约 5%，随后在 需求实证中收复并创新高。
+    mechanism: 叙事级质疑缺乏盈利下修证据，回调由情绪而非基本面驱动。
+    keywords: [ai泡沫, 高盛, capex回报, 叙事回调]
+    tickers_affected:
+      - {ticker: NVDA, direction: -1, magnitude: 0.3, drawdown: -5.2}
+      - {ticker: SMH, direction: -1, magnitude: 0.2, drawdown: -4.5}
+    market: {}
+    tags: [fizzled, 叙事回调, 泡沫争论, 公开数据待复核]
+    fizzled: true
+
+  - event_id: 2025-06-israel-iran-war
+    name: 以色列-伊朗直接冲突（油价冲高，股指两日收复）
+    start_date: 2025-06-13
+    category: crisis
+    summary: 以色列空袭伊朗核设施引发战争恐慌，油价单周冲高约 7%，美股两三个交易日收复，半导体 板块影响有限。
+    mechanism: 供给冲击预期集中于能源，未触及科技供应链与盈利路径。
+    keywords: [地缘冲突, 以色列, 伊朗, 油价]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.2, drawdown: -3.0}
+    market: {}
+    tags: [fizzled, 地缘冲突, 快速收复, 公开数据待复核]
+    fizzled: true
+
+  # ============ 正事件腿补充（v1.3） ============
+  - event_id: 2023-11-cpi-disinflation
+    name: 美国 10 月 CPI 超预期降温（加息周期见顶交易开启）
+    start_date: 2023-11-14
+    category: monetary
+    summary: CPI 同比与环比双双低于预期，市场确认加息周期结束，美股单日大涨（费半 +4% 级别），开启年末行情。
+    mechanism: 贴现率预期快速下移，长久期成长股估值弹性释放。
+    keywords: [cpi, 通胀降温, 加息见顶, 利率]
+    tickers_affected:
+      - {ticker: SMH, direction: 1, magnitude: 0.6}
+      - {ticker: NVDA, direction: 1, magnitude: 0.6}
+    market: {}
+    tags: [正向, 宏观利好, 利率拐点, 公开数据待复核]
+
+  # ============ pre-2018 机制类比（v1.3：产业结构已变，仅机制可比） ============
+  - event_id: 2000-03-dotcom-peak
+    name: 互联网泡沫见顶破裂（机制类比：估值泡沫+盈利缺口）
+    start_date: 2000-03-10
+    category: crisis
+    summary: 纳指见顶后两年半下跌约 78%，费半跌约八成。产业结构与今日 AI 链不同（无现金流的概念股主导）， 仅作机制类比：估值远超盈利兑现速度+资本开支自我强化后的断裂。
+    mechanism: 估值泡沫+盈利缺口，capex 自我强化循环断裂后的戴维斯双杀（机制层面可比）。
+    keywords: [泡沫, 互联网, 估值破裂, capex断裂]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 1.0, drawdown: -82.0, drawdown_days: 660, recovery_days: null}
+    market: {}
+    tags: [机制类比, 体制转折, 泡沫破裂, 公开数据待复核]
+
+  - event_id: 2008-09-lehman-collapse
+    name: 雷曼兄弟破产（机制类比：流动性危机与信用收缩）
+    start_date: 2008-09-15
+    category: crisis
+    summary: 系统性信用危机最深一段，费半自年内高点再跌约六成，2009-03 见底。机制类比：流动性挤 兑下相关性趋近 1，个股基本面短期失效。
+    mechanism: 信用收缩→流动性挤兑→相关性归一（体制层关门的历史原型）。
+    keywords: [金融危机, 雷曼, 流动性危机, 信用收缩]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.9, drawdown: -58.0, drawdown_days: 165, recovery_days: null}
+    market: {}
+    tags: [机制类比, 体制转折, 金融危机, 公开数据待复核]
+
+  - event_id: 2011-08-us-downgrade
+    name: 美债 AAA 评级下调叠加欧债危机（机制类比）
+    start_date: 2011-08-05
+    category: macro
+    summary: 标普下调美债评级，标普 500 四个交易日下跌约 16.5%，费半回撤更深，数月内收复。
+    mechanism: 主权信用冲击+欧债传染，波动率事件后由盈利接续修复。
+    keywords: [评级下调, 欧债, 主权信用]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.6, drawdown: -25.0, drawdown_days: 15}
+    market: {}
+    tags: [机制类比, 波动率事件, 快速收复, 公开数据待复核]
+
+  - event_id: 2015-08-cny-devaluation
+    name: 人民币汇改贬值引发全球量化平仓（机制类比）
+    start_date: 2015-08-11
+    category: macro
+    summary: 央行一次性贬值引发全球风险资产与量化策略连锁平仓，费半数周回撤约 17%，10 月部分收复后 2016 年初二次探底。
+    mechanism: 汇率冲击→全球组合去杠杆→高 beta 资产被动抛售。
+    keywords: [人民币, 汇率, 量化平仓, 去杠杆]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.5, drawdown: -17.0, drawdown_days: 20}
+    market: {}
+    tags: [机制类比, 汇率冲击, 二次探底, 公开数据待复核]
+
+  - event_id: 2016-01-china-circuit-breaker
+    name: A 股熔断+油价崩盘（机制类比：开年风险释放）
+    start_date: 2016-01-04
+    category: macro
+    summary: 中国熔断机制四天两次触发叠加油价跌破 30 美元，费半 1 月回撤约 22%，随后与中国需求复苏 一起在年内收复并新高。
+    mechanism: 中国需求定价+大宗通缩叙事，半导体作为高 beta 全球需求代理被抛售。
+    keywords: [熔断, 油价, 中国需求, 全球增长]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.6, drawdown: -22.0, drawdown_days: 20}
+    market: {}
+    tags: [机制类比, 全球增长恐慌, 年内收复, 公开数据待复核]
+
+  # ============ 快速收复危机对照（v1.3：修正"恢复天数"的悲观估计） ============
+  - event_id: 2023-03-regional-bank-crisis
+    name: 区域银行危机（SVB 破产，V 型收复）
+    start_date: 2023-03-09
+    category: crisis
+    summary: 硅谷银行两日内倒闭引发系统性担忧，费半两周回撤约 10%，3 月下旬起 V 型收复并于 5 月新高——危机传染与快速修复的对照样本。
+    mechanism: 利率风险错配引发的局部银行危机，未传导至科技盈利；美联储 BTFF 工具快速止血。
+    keywords: [银行危机, svb, 流动性, 倒闭]
+    tickers_affected:
+      - {ticker: SMH, direction: -1, magnitude: 0.5, drawdown: -10.0, drawdown_days: 10}
+    market: {}
+    tags: [危机传染, V型收复, 公开数据待复核]

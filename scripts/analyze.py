@@ -39,15 +39,19 @@ def main() -> int:
     regime = outcome.get("regime")
     if regime is not None:
         broken = regime.regime_broken()
-        print(f"体制层：{'破位（硬约束生效）' if broken else '完好（允许做多）'}  "
+        print(f"体制层：{'破位（分级约束生效）' if broken else '完好（允许做多）'}  "
               f"VIX {regime.vix}  费半 ATR {regime.sox_atr14}%")
     else:
         print("体制层：数据缺失（按未破位处理并标注）")
     print()
 
     for ticker, output in outcome.get("outputs", {}).items():
-        gate = " ｜硬约束生效" if output.regime_gate_applied else ""
-        print(f"  {ticker:<6} 总分 {output.weighted_total:>5.1f}  分档 {output.band}{gate}")
+        marks = ""
+        if output.regime_gate_applied:
+            marks += f" ｜分级约束（仓位上限 {output.position_cap:.0%}）"
+        if output.company_gate_applied:
+            marks += " ｜公司面门槛"
+        print(f"  {ticker:<6} 总分 {output.weighted_total:>5.1f}  分档 {output.band}{marks}")
 
     print()
     result = outcome["result"]

@@ -70,6 +70,13 @@ def upsert_snapshot(row: SnapshotRow) -> None:
         )
 
 
+def list_snapshot_tickers() -> list[str]:
+    """快照表里出现过的全部 ticker（回测脚本遍历用）。"""
+    with get_conn() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT DISTINCT ticker FROM snapshots ORDER BY ticker")
+        return [r["ticker"] for r in cursor.fetchall()]
+
+
 def get_snapshots(ticker: str, since: date) -> list[SnapshotRow]:
     with get_conn() as conn, conn.cursor() as cursor:
         cursor.execute(

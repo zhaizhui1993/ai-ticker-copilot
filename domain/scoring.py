@@ -2,7 +2,7 @@
 
 规格：docs/05-scoring/README.md（ScoreBreakdown / FourDimScores）
      docs/05-scoring/layered-technicals.md（IndexRegime 体制层）
-     docs/05-scoring/engine.md（体制层硬约束判定）
+     docs/05-scoring/engine.md（体制层分级约束判定）
      docs/10-module-contracts.md §10.2①③（MacroPoint / EngineOutput）
 """
 
@@ -64,9 +64,10 @@ class IndexRegime(BaseModel):
     sox_atr14: float | None = None  # 费城半导体 ATR14（%）
 
     def regime_broken(self) -> bool:
-        """体制层硬约束判定（docs/05-scoring/engine.md）：
+        """体制层分级约束判定（docs/05-scoring/engine.md）：
 
         两个及以上指数收盘 < MA200，或任一指数 < MA200 且 VIX>25。
+        触发后由 Engine 档位封顶"中性偏多"并输出仓位上限系数 0.3。
         """
         below = [i for i in self.indexes if i.below_ma200]
         if len(below) >= 2:
@@ -75,9 +76,11 @@ class IndexRegime(BaseModel):
 
 
 class EngineOutput(BaseModel):
-    """加权汇总 + 分档 + 体制层硬约束结果"""
+    """加权汇总 + 分档 + 体制层分级约束结果"""
 
     weighted_total: float = Field(ge=0, le=100)
     band: str                       # 分档参考（积极/中性偏多/中性偏空/防御）
-    regime_gate_applied: bool = False  # 体制层破位时 True：信号上限压至"观望"
+    regime_gate_applied: bool = False  # 体制层破位时 True：档位封顶 + 仓位上限系数
     regime_note: str = ""
+    company_gate_applied: bool = False  # 公司面短板门槛触发（v1.2：公司分过低时封顶档位）
+    position_cap: float = Field(default=1.0, ge=0.0, le=1.0)  # 仓位上限系数（破位 0.3，正常 1.0）

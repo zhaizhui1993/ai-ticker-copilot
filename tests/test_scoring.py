@@ -1,4 +1,4 @@
-"""P5 验收：各维分数方向/区间、权重生效、分档正确、体制层硬约束（testing.md §12.4）。"""
+"""P5 验收：各维分数方向/区间、权重生效、分档正确、体制层分级约束与公司面门槛（testing.md §12.4）。"""
 
 from datetime import date, timedelta
 
@@ -30,7 +30,7 @@ def _bars(closes: list[float]) -> list[DailyBar]:
 
 
 def _regime(broken: bool) -> IndexRegime:
-    if broken:  # 两个指数破位 → 触发硬约束
+    if broken:  # 两个指数破位 → 触发分级约束
         return IndexRegime(indexes=[
             IndexLevel(symbol="^GSPC", close=100, ma200=110),
             IndexLevel(symbol="^NDX", close=100, ma200=110),
@@ -97,6 +97,23 @@ def test_event_score_formula_and_freshness() -> None:
     assert 40 <= none_hit.score <= 60                 # 无命中 → 中性
 
 
+def test_event_category_decay_and_renorm() -> None:
+    scorer = EventScorer()
+    match = EventMatchResult(event_id="e1", similarity=0.8, direction=-1, magnitude=0.8,
+                             affected_tickers=["NVDA"])
+    # 分类型衰减：管制类半衰期 45 天 vs 默认 7 天 → 30 天后利空留存差异显著
+    slow = scorer.score("NVDA", [(match, 30)], x_sentiment=50.0,
+                        category_by_event={"e1": "regulation"})
+    fast = scorer.score("NVDA", [(match, 30)], x_sentiment=50.0)
+    assert slow.score < fast.score
+    assert slow.indicators["半衰期(天)"] == "45"
+
+    # 情绪缺失 → 类比权重重归一化（0.8→1.0）：50 + 类比分×0.5
+    no_x = scorer.score("NVDA", [(match, 0)], x_sentiment=None)
+    assert abs(no_x.score - (50 + (-64) * 0.5)) < 0.1
+    assert "重归一化" in no_x.degraded_note
+
+
 # ---------- 产业面 ----------
 
 
@@ -113,7 +130,39 @@ def test_industry_basket_and_neutral_degrade() -> None:
     assert 30 <= other.score <= 70
 
 
+def test_industry_missing_legs_renormalized() -> None:
+    scorer = IndustryScorer()
+    rising = {s: _bars([100 * (1 + 0.002 * i) for i in range(80)]) for s in ("NVDA", "AMD")}
+    spy = _bars([100 * (1 + 0.0002 * i) for i in range(80)])
+    # 财报动量与 AI 词频缺失 → 相对强弱占满权重（≈85），而不是被两个中性 50 稀释到 59
+    one_leg = scorer.score("gpu", rising, spy_bars=spy)
+    assert one_leg.score >= 80
+    assert "重归一化" in one_leg.degraded_note
+
+
 # ---------- 公司面 ----------
+
+
+def test_event_state_factor() -> None:
+    """v1.3 状态缺口调节：当前比历史样本更拥挤 → 冲击放大（clamp ×0.5~×1.5）。"""
+    scorer = EventScorer()
+    crowded = EventMatchResult(event_id="e1", similarity=0.8, direction=-1, magnitude=0.8,
+                               affected_tickers=["NVDA"], pre_bias_ma200=20.0)
+    # 历史样本乖离 +20% vs 当前 +80% → 缺口 60pt → 因子 1.3 → 利空更深
+    hot = scorer.score("NVDA", [(crowded, 0)], x_sentiment=50.0,
+                       current_state={"bias_ma200": 80.0, "drawdown_52w": -1.0})
+    cool = scorer.score("NVDA", [(crowded, 0)], x_sentiment=50.0,
+                        current_state={"bias_ma200": 20.0, "drawdown_52w": -1.0})
+    assert hot.score < cool.score < 50
+    assert "状态调节" in hot.indicators and "状态调节" in hot.rationale
+    assert cool.indicators.get("状态调节") is None       # 状态可比 → 不调节
+
+    # 极端拥挤被 clamp 在 1.5；状态缺失（无 current/pre）不调节
+    extreme = scorer.score("NVDA", [(crowded, 0)], x_sentiment=50.0,
+                           current_state={"bias_ma200": 300.0})
+    no_state = scorer.score("NVDA", [(crowded, 0)], x_sentiment=50.0)
+    assert extreme.score < hot.score                       # 放大有上限但仍随拥挤加深
+    assert abs(no_state.score - 24.4) < 0.1                # 无状态 = 原公式（24.4 基准）
 
 
 def test_company_growth_quality_direction() -> None:
@@ -134,13 +183,32 @@ def test_company_growth_quality_direction() -> None:
     assert pr.indicators["择时"] >= 55
 
 
-# ---------- 汇总与体制层硬约束 ----------
+# ---------- 汇总与体制层分级约束 ----------
 
 
 def _four(m: float, e: float, i: float, c: float) -> FourDimScores:
     def sb(s: float) -> ScoreBreakdown:
         return ScoreBreakdown(score=s, rationale="")
     return FourDimScores(macro=sb(m), event=sb(e), industry=sb(i), company=sb(c))
+
+
+def test_company_valuation_peg_and_cyclical_cap() -> None:
+    scorer = CompanyScorer()
+    flat = _bars([100.0] * 120)
+
+    # 超成长：PE 60 / 增速 60 → 类 PEG=1.0 → 估值不再因绝对 PE 高而给低分
+    hyper = scorer.score("NVDA", flat, Financials(revenue_yoy=60, pe_ttm=60), segment="gpu")
+    assert hyper.indicators["估值"] >= 70
+    assert "类 PEG" in hyper.degraded_note
+
+    # 周期段低 PE（盈利峰值特征）：估值分封顶不加高分
+    cyc = scorer.score("AMAT", flat, Financials(revenue_yoy=12, pe_ttm=11), segment="equipment")
+    assert cyc.indicators["估值"] <= 55
+    assert "封顶" in cyc.degraded_note
+
+    # 亏损/PE 缺失：估值腿剔除（重归一化），而不是塞中性 50
+    loss = scorer.score("XYZ", flat, Financials(revenue_yoy=80))
+    assert "估值腿剔除" in loss.degraded_note
 
 
 def test_engine_weights_and_bands() -> None:
@@ -161,16 +229,30 @@ def test_engine_weights_and_bands() -> None:
 
 def test_regime_hard_gate() -> None:
     engine = Engine()
-    # 破位环境：积极/偏多被压至"观望偏加仓"上限以下（上限=观望）
+    # 破位环境：档位封顶"中性偏多"+ 仓位上限系数 0.3（信号=观望偏加仓·小仓）
     gated = engine.run(_four(80, 80, 80, 80), _regime(broken=True))
     assert gated.regime_gate_applied is True
-    assert gated.band != "积极"                        # 档位被压制
-    assert "体制层硬约束" in gated.regime_note
+    assert gated.band == "中性偏多"                     # 档位被压制（不再一刀切观望）
+    assert gated.position_cap == 0.3                    # 仓位调节系数输出
+    assert "体制层" in gated.regime_note
     assert "观望" in gated.regime_note
+    assert "0.3" in gated.regime_note
 
     # 防御档不受门控影响（本就低于上限）
     defensive = engine.run(_four(10, 10, 10, 10), _regime(broken=True))
     assert defensive.band == "防御"
+
+    # 公司面短板门槛：其他三维强势把总分平均进"积极"（75），公司分 30 → 档位封顶
+    weak_company = engine.run(_four(90, 90, 90, 30), _regime(broken=False))
+    assert weak_company.weighted_total == 75.0
+    assert weak_company.company_gate_applied is True
+    assert weak_company.band == "中性偏多"
+    assert weak_company.position_cap == 1.0             # 非破位环境不降仓位系数
+
+    # 正常环境：无任何门槛触发
+    normal = engine.run(_four(80, 80, 80, 80), _regime(broken=False))
+    assert normal.band == "积极" and normal.position_cap == 1.0
+    assert normal.company_gate_applied is False
 
     try:
         Engine({"macro": 0.3, "event": 0.3, "industry": 0.2, "company": 0.1})  # 0.9

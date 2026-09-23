@@ -28,8 +28,10 @@
 
 - **不用 embedding 的理由**：事件库几十条规模，硬检索 + LLM 精排性价比最高，省 embedding API 成本与一个依赖；库超 ~200 条再升级向量检索（演进路径见 [09-delivery/evolution.md](../09-delivery/evolution.md)）。
 - **LLM 精排接线位置（P6 起）**：生产路径在 `analyzer/pipeline.run_analysis` 内联执行①②——`llm.rerank_matches(event, candidates)`（真 LLM，供应商无关）返回 None（无 key/失败/结果非法）时回落 `matcher.rule_rerank`（可解释成分：category 0.3 + 关键词覆盖 0.4 + 标的 0.2 + 月份 0.1）。`matcher.llm_rerank` 当前为占位别名（直接委托 rule_rerank），`match_event / match_event_degraded / synthesize_analogy` 为库函数（测试与未来复用），生产 pipeline 每事件直接取**精排结果 top-3** 喂 EventScorer 与"最强类比"文案，不做③的聚合。
+- **状态可比性（v1.3 / P1-2 演进）**：历史回撤 = f(事件强度, 标的状态)。候选在精排 prompt 中携带事件前状态（pre_bias_ma200 / pre_drawdown_52w，由 `scripts/backfill_pre_state.py` 回填），当前事件携带标的现状态（价格反应的距 52 周高/前 20 日涨幅）——`difference` 字段必须同时覆盖**事件差异 + 状态差异**两层；`EventScorer` 另按乖离缺口对 magnitude 做 ×0.5~×1.5 调节（见 [05-scoring/event-score.md](../05-scoring/event-score.md)）。pipeline 在喂分前用 `events_lib.pre_state.attach_pre_state` 把历史样本状态附加到匹配副本（跨标的共享对象不污染）。
+- **fizzled 对照（v1.3）**：`fizzled=true` 的事件（雷声大雨点小）正常参与检索与聚合——浅回撤样本拉低"平均冲击"，修正库内全是深冲击事件造成的高估；prompt 中显式标注 fizzled 供 LLM 识别。
 - **置信度语义**：规则版精排全程 `confidence='low'`（note 标注"未经 LLM 校验"）；LLM 精排结果的 similarity 由 LLM 打分。
 - **降级路径**：LLM 不可用时直接用硬检索/规则精排结果输出类比，标注"低置信类比（未过 LLM 校验）"，`confidence='low'`。
 - **样本量保护（v1.1）**：synthesize_analogy 中同类事件 n<3 时输出"样本不足，仅供参考"而非平均值。
-- **正向事件必须入种子库**（2023-05 AI 行情启动等 8 条正向基准），否则类比永远偏空——这是种子库设计的硬约束。
+- **正向事件必须入种子库**（2023-05 AI 行情启动等 9 条正向基准），否则类比永远偏空——这是种子库设计的硬约束。
 - 接口签名（hard_retrieve / rule_rerank / llm_rerank / synthesize_analogy）见 [10-module-contracts.md §10.2②](../10-module-contracts.md)；LLM 精排 prompt 见 [06-analyzer/prompts.md](../06-analyzer/prompts.md)。

@@ -74,6 +74,9 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
 
     # ---- 事件匹配（近 7 天当前事件） ----
     lib = _load_lib()
+    # 分类型新鲜度衰减查表：event_id → 历史事件性质（macro/regulation/…）
+    category_by_event = {e.event_id: e.category.value for e in lib}
+    lib_by_id = {e.event_id: e for e in lib}   # 状态附加：event_id → 历史事件（含 pre-state）
     recent_events = _recent_current_events(days=7)
     per_event_matches: list[tuple[list, object]] = []
     for event in recent_events:
@@ -106,20 +109,34 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
         except Exception:
             fin = None
 
-        match_inputs = [
-            (m, (today - event.occurred_date).days)
-            for matches, event in per_event_matches
-            for m in matches[:3]
-            if (today - event.occurred_date).days >= 0
-        ]
-        event_score = event_scorer.score(stock.symbol, match_inputs, x_sentiment=None)
+        match_inputs = []
+        for matches, event in per_event_matches:
+            for m in matches[:3]:
+                if (today - event.occurred_date).days >= 0:
+                    m2 = m.model_copy()          # 匹配对象跨标的共享，状态按标的附加到副本
+                    hist = lib_by_id.get(m.event_id)
+                    if hist is not None:
+                        from events_lib.pre_state import attach_pre_state
+                        attach_pre_state(m2, hist, stock.symbol)
+                    match_inputs.append((m2, (today - event.occurred_date).days))
+
+        current_state = None
+        if len(bars) >= 60:
+            from domain import technicals
+            current_state = {
+                "bias_ma200": technicals.bias_vs_ma200_pct(bars),
+                "drawdown_52w": technicals.drawdown_from_high_pct(bars),
+            }
+        event_score = event_scorer.score(stock.symbol, match_inputs, x_sentiment=None,
+                                         category_by_event=category_by_event,
+                                         current_state=current_state)
 
         try:
             spy_bars = market.get_daily_bars("SPY", 80)
         except Exception:
             spy_bars = None
         industry_score = industry_scorer.score(stock.segment, {stock.symbol: bars}, spy_bars)
-        company_score = company_scorer.score(stock.symbol, bars, fin)
+        company_score = company_scorer.score(stock.symbol, bars, fin, segment=stock.segment.value)
 
         four = FourDimScores(macro=macro_score, event=event_score,
                              industry=industry_score, company=company_score)
@@ -145,6 +162,8 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
             "analogy_note": analogy_note,
             "degraded_note": degraded_note,
             "position": stock.position.value, "segment": stock.segment.value,
+            "position_cap": output.position_cap,
+            "company_gate": output.company_gate_applied,
         }
         per_ticker_blocks.append(_format_ticker_block(stock, four, output, analogy_note, degraded_note))
 
@@ -166,6 +185,14 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
                     signal=signal.action.value if signal else output.band,
                     confidence=signal.confidence if signal else None,
                     scores=four_by_symbol.get(stock.symbol),
+                    analysis={  # 回测与同日回放所需字段（P0-3）
+                        "signals": result.model_dump()["signals"],
+                        "market_summary": result.market_summary,
+                        "regime_gate": output.regime_gate_applied,
+                        "company_gate": output.company_gate_applied,
+                        "position_cap": output.position_cap,
+                        "band": output.band,
+                    },
                 ))
             repository.append_analysis_run(
                 {"tickers": [s.symbol for s in stocks], "date": str(today)},
@@ -231,6 +258,7 @@ def _format_ticker_block(stock, four, output, analogy_note, degraded_note) -> st
         ticker=stock.symbol, segment=stock.segment.value, position=stock.position.value,
         total=output.weighted_total, band=output.band,
         weights="0.25×4", regime_gate="",
+        position_cap=f"{output.position_cap:g}",
         macro=four.macro.score, event=four.event.score,
         industry=four.industry.score, company=four.company.score,
         rationales="\n  ".join(f"{d.rationale}" for d in

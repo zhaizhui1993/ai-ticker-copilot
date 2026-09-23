@@ -5,6 +5,7 @@
 ② 完整分析：cron，America/New_York 周一至五 17:35（收盘后）
 ③ X 低频抓取：每天 1 次（防风控硬约束）
 ④ 当前事件自动沉淀：T+60/T+180 天回填草稿（source='auto'，人工核对后转正）
+⑤ 信号月度评估：每月 1 日 10:00（ET）生成固定指标集评测报告并追加存档（data/eval/）
 
 实现约定：
 - 任务到点后在线程中执行（避免阻塞 asyncio 事件循环）；
@@ -99,6 +100,19 @@ def sediment_events_job() -> None:
         print(f"[scheduler] 自动沉淀失败（不影响其他任务）：{exc}")
 
 
+def monthly_eval_job() -> None:
+    """⑤ 月度信号评估：固定指标集全量报告 → data/eval/monthly-YYYY-MM.md 追加存档。
+
+    追加式存档（只增不覆盖）形成不可回改的跟踪记录——防自欺机制；
+    mock 模式跳过（数字无意义）。见 analyzer/evaluation.py。
+    """
+    from analyzer import evaluation
+    try:
+        evaluation.run_monthly_report()
+    except Exception as exc:
+        print(f"[scheduler] 月度评估失败（不影响其他任务）：{exc}")
+
+
 # ---------- 组装 ----------
 
 
@@ -124,5 +138,10 @@ def build_scheduler() -> AsyncIOScheduler:
         lambda: _spawn(sediment_events_job), CronTrigger(
             hour=8, minute=0, timezone=ET),
         id="auto_sediment", name="事件自动沉淀(每日)",
+    )
+    scheduler.add_job(
+        lambda: _spawn(monthly_eval_job), CronTrigger(
+            day=1, hour=10, minute=0, timezone=ET),
+        id="monthly_eval", name="信号月度评估(每月1日)",
     )
     return scheduler

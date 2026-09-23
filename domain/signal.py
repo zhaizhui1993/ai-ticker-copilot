@@ -25,6 +25,7 @@ class TickerSignal(BaseModel):
     reason: str                # 须引用四维分数与事件类比；偏离分档必须说明
     risks: list[str] = Field(default_factory=list, min_length=0)
     price_target_hint: str | None = None  # 软提示，如"等回踩 MA50 再考虑"
+    position_cap: float | None = Field(default=None, ge=0.0, le=1.0)  # 仓位上限系数（体制层风险参数，破位 0.3）
 
 
 class AnalysisResult(BaseModel):

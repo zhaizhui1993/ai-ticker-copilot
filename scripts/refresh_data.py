@@ -36,7 +36,7 @@ def refresh_market() -> None:
         print(f"  {level.symbol:<6} 收盘 {level.close:>10.2f}  MA200 {level.ma200:>10.2f}  {status}")
     print(f"  VIX {regime.vix}  |  ^SOX ATR14 {regime.sox_atr14}%")
     broken = regime.regime_broken()
-    print(f"  → 体制层判定：{'破位（硬约束生效，信号上限=观望）' if broken else '完好（允许做多）'}")
+    print(f"  → 体制层判定：{'破位（分级约束：档位≤中性偏多、仓位上限系数 0.3）' if broken else '完好（允许做多）'}")
 
     print()
     stocks = load_stocks()

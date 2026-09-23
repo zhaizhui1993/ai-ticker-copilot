@@ -44,7 +44,11 @@ def build_chat_context() -> dict:
                     f = last.scores
                     scores = (f"｜四维 宏观{f.macro.score}/事件{f.event.score}"
                               f"/产业{f.industry.score}/公司{f.company.score}")
-                lines.append(f"{stock.symbol}：信号 {last.signal}｜总分见分析{scores}")
+                cap_note = ""
+                cap = (last.analysis or {}).get("position_cap")
+                if cap is not None and cap < 1.0:
+                    cap_note = f"｜仓位上限系数 {cap:g}"
+                lines.append(f"{stock.symbol}：信号 {last.signal}｜总分见分析{scores}{cap_note}")
         if lines:
             latest = "\n".join(lines)
     except Exception as exc:
@@ -56,7 +60,9 @@ def build_chat_context() -> dict:
         from collectors import get_market
         from prompts.analysis import build_regime_desc
         r = get_market().get_index_regime()
-        regime_desc = build_regime_desc(r) + f"；判定：{'破位（硬约束）' if r.regime_broken() else '完好'}"
+        regime_desc = build_regime_desc(r) + (
+            "；判定：破位（分级约束：档位≤中性偏多、信号上限=观望偏加仓小仓、仓位上限系数 0.3）"
+            if r.regime_broken() else "；判定：完好（仓位上限系数 1.0）")
     except Exception as exc:
         degraded.append(f"指数数据获取失败：{str(exc)[:80]}")
 

@@ -127,7 +127,8 @@ def judge(ctx: dict, ticker_ctx: dict) -> AnalysisResult:
 
 
 def rule_judge(ctx: dict, ticker_ctx: dict) -> AnalysisResult:
-    """规则版研判：分档直出 + 体制层硬约束封顶；理由必须引用分数（与 prompt 规则同语义）。"""
+    """规则版研判：分档直出 + 体制层分级约束封顶（watch_add·小仓 + 仓位系数）；
+    理由必须引用分数（与 prompt 规则同语义）。"""
     gate = bool(ctx.get("regime_gate"))
     signals = []
     for ticker, data in ticker_ctx.items():
@@ -143,9 +144,11 @@ def rule_judge(ctx: dict, ticker_ctx: dict) -> AnalysisResult:
         analogy = data.get("analogy_note")
         if analogy:
             reason += f"事件类比：{analogy}。"
-        if gate and action in (Action.ACCUMULATE, Action.WATCH_ADD):
-            reason += f"体制层硬约束生效（{ctx.get('regime_note', '')}），信号上限压至观望。"
-            action = Action.WATCH
+        position_cap = float(data.get("position_cap", 1.0))
+        if gate and action == Action.ACCUMULATE:
+            reason += (f"体制层分级约束生效（{ctx.get('regime_note', '')}），"
+                       f"信号上限压至观望偏加仓（小仓），仓位上限系数 {position_cap}。")
+            action = Action.WATCH_ADD
         if data.get("degraded_note"):
             reason += f"数据降级：{data['degraded_note']}。"
         if ctx.get("llm_degraded"):
@@ -156,6 +159,7 @@ def rule_judge(ctx: dict, ticker_ctx: dict) -> AnalysisResult:
             reason=reason,
             risks=[data.get("risk_hint") or "四维分数与信号为规则产物，未经 LLM 交叉研判"],
             price_target_hint=None,
+            position_cap=position_cap if gate else None,
         ))
     return AnalysisResult(
         generated_at=ctx.get("date", ""),

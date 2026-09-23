@@ -1,17 +1,55 @@
-"""公司面评分（权重 25%，逐 ticker）：成长 35% + 估值 30% + 质量 20% + 技术面 15%。
+"""公司面评分（权重 25%，逐 ticker）：成长 40% + 估值 15% + 质量 30% + 技术面 15%。
 
 规格：docs/05-scoring/company-score.md + layered-technicals.md
 技术面子项按三层体系实现：伤害度量（回撤/乖离）+ 趋势（MA50）+ 择时（RSI/量比）。
-估值：PE 5 年分位数据不足时以绝对 PE 粗分并标注（docs 已允许降级近似）。
+v1.2 修复（P0-1/P1-4）：
+- 估值不再用绝对 PE 直接驱动总分：正增长时按类 PEG（PE/营收 YoY）分桶；
+  周期段（equipment/foundry）低 PE 视为盈利峰值信号、封顶不加高分；
+  PE 缺失或亏损时剔除估值腿（权重重归一化），而不是塞中性 50。
+- 任何子腿数据缺失都显式重归一化并在 degraded_note 标注。
 """
 
 from domain import technicals
 from domain.scoring import ScoreBreakdown
 from domain.stock import DailyBar, Financials
 
+# 子项权重（v1.2：估值 30%→15% 让渡给质量，合计 = 1.0）
+WEIGHT_GROWTH = 0.40
+WEIGHT_VALUATION = 0.15
+WEIGHT_QUALITY = 0.30
+WEIGHT_TECH = 0.15
+
+# 周期段：低 PE 常伴盈利峰值（如设备/代工周期顶），估值分封顶不加高分
+CYCLICAL_SEGMENTS = {"equipment", "foundry"}
+CYCLICAL_VALUATION_CAP = 55.0
+
 
 def _clamp(v: float) -> float:
     return max(0.0, min(100.0, v))
+
+
+def _peg_valuation(pe: float, revenue_yoy: float, cyclical: bool) -> tuple[float, str]:
+    """类 PEG（PE / 营收 YoY）分桶；周期段封顶。返回 (分数, 口径标注)。"""
+    peg = pe / revenue_yoy
+    if peg < 1.5:
+        v = 75.0
+    elif peg < 2.5:
+        v = 60.0
+    elif peg < 3.5:
+        v = 45.0
+    else:
+        v = 30.0
+    note = f"类 PEG 口径（PE {pe:.0f}/增速 {revenue_yoy:.0f}%={peg:.1f}）"
+    if cyclical and v > CYCLICAL_VALUATION_CAP:
+        v = CYCLICAL_VALUATION_CAP
+        note += "；周期段低 PE 常伴盈利峰值，已封顶"
+    return v, note
+
+
+def _absolute_valuation_capped(pe: float) -> tuple[float, str]:
+    """无正增长支撑时的绝对 PE 参考：不给高分（≤55），仅作粗参考。"""
+    v = 55.0 if pe < 20 else 50.0 if pe < 35 else 40.0 if pe < 60 else 30.0
+    return v, f"绝对 PE 参考口径（PE {pe:.0f}，无正增长支撑不给高分）"
 
 
 class CompanyScorer:
@@ -22,41 +60,46 @@ class CompanyScorer:
         ticker: str,
         bars: list[DailyBar],
         fin: Financials | None = None,
+        segment: str | None = None,
     ) -> ScoreBreakdown:
         notes = []
         fin = fin or Financials()
+        cyclical = (segment or "").lower() in CYCLICAL_SEGMENTS
+        legs: list[tuple[str, float, float]] = []  # (子项名, 分数, 权重)
 
-        # ① 成长 35%
-        growth = 50.0
+        # ① 成长 40%
         if fin.revenue_yoy is not None:
             growth = (90 if fin.revenue_yoy >= 30 else 70 if fin.revenue_yoy >= 10
                       else 50 if fin.revenue_yoy >= 0 else 25)
+            legs.append(("成长", growth, WEIGHT_GROWTH))
         else:
-            notes.append("营收 YoY 缺失（成长计中性）")
+            notes.append("营收 YoY 缺失（成长腿剔除，权重重归一化）")
 
-        # ② 估值 30%（PE 5 年分位不可得 → 绝对 PE 粗分近似）
-        valuation = 50.0
+        # ② 估值 15%（P0-1：类 PEG + 周期封顶 + 缺失剔除，不直接用绝对 PE 驱动总分）
         if fin.pe_ttm is not None and fin.pe_ttm > 0:
-            valuation = (80 if fin.pe_ttm < 20 else 60 if fin.pe_ttm < 35
-                         else 45 if fin.pe_ttm < 60 else 30)
-            notes.append("估值为绝对 PE 粗分（5 年分位数据不足）")
+            if fin.revenue_yoy is not None and fin.revenue_yoy > 0:
+                valuation, v_note = _peg_valuation(fin.pe_ttm, fin.revenue_yoy, cyclical)
+            else:
+                valuation, v_note = _absolute_valuation_capped(fin.pe_ttm)
+            legs.append(("估值", valuation, WEIGHT_VALUATION))
+            notes.append(f"估值口径：{v_note}")
         else:
-            notes.append("PE 数据缺失（估值计中性）")
+            notes.append("PE 缺失或亏损（估值腿剔除，权重重归一化；亏损期看成长/质量）")
 
-        # ③ 质量 20%
-        quality = 50.0
+        # ③ 质量 30%
         if fin.gross_margin is not None:
             quality = _clamp(50 + (fin.gross_margin - 40) * 0.5
                              + (15 if fin.fcf_positive else -15)
                              + ((fin.roe or 15) - 15) * 0.3)
+            legs.append(("质量", quality, WEIGHT_QUALITY))
         elif fin.fcf_positive is not None:
-            quality = 65 if fin.fcf_positive else 35
+            legs.append(("质量", 65 if fin.fcf_positive else 35, WEIGHT_QUALITY))
+        else:
+            notes.append("基本面数据缺失（质量腿剔除，权重重归一化）")
 
         # ④ 技术面 15%：分层（伤害 25% + 趋势 40% + 择时 35%）
-        tech = 50.0
         tech_parts = {}
         if len(bars) >= 60:
-            # 趋势层：MA50 斜率 + 价格相对 MA50
             slope = technicals.ma_slope_pct(bars, 50, 10)
             ma50 = technicals.sma(bars, 50)
             trend = 50.0
@@ -66,7 +109,6 @@ class CompanyScorer:
                 trend += 10 if bars[-1].close >= ma50 else -10
             tech_parts["趋势"] = _clamp(trend)
 
-            # 择时层：RSI 区间语义（强势趋势 70+ 不算卖出信号）
             rsi = technicals.rsi(bars)
             if rsi is None:
                 timing = 50.0
@@ -82,7 +124,6 @@ class CompanyScorer:
                 timing = 35.0    # 深度超卖（需体制层配合解读）
             tech_parts["择时"] = timing
 
-            # 伤害度量：52 周回撤 + 乖离率（主指标，破位仅确认）
             drawdown = technicals.drawdown_from_high_pct(bars)
             damage = 60.0
             if drawdown is not None:
@@ -90,17 +131,27 @@ class CompanyScorer:
                           else 40 if drawdown > -40 else 30)
             tech_parts["伤害"] = damage
 
-            tech = round(tech_parts["趋势"] * 0.40 + tech_parts["择时"] * 0.35 + tech_parts["伤害"] * 0.25, 1)
+            tech = round(tech_parts["趋势"] * 0.40 + tech_parts["择时"] * 0.35
+                         + tech_parts["伤害"] * 0.25, 1)
+            legs.append(("技术面", tech, WEIGHT_TECH))
         else:
-            notes.append("K 线数据不足（技术面计中性）")
+            notes.append("K 线数据不足（技术面腿剔除，权重重归一化）")
 
-        total = round(growth * 0.35 + valuation * 0.30 + quality * 0.20 + tech * 0.15, 1)
+        if legs:
+            w_sum = sum(w for _, _, w in legs)
+            total = round(sum(v * w for _, v, w in legs) / w_sum, 1)
+            norm = f"，权重重归一化 {w_sum:.0%}" if abs(w_sum - 1.0) > 1e-9 else ""
+        else:
+            total, norm = 50.0, ""
         tone = "偏多" if total >= 60 else ("偏空" if total <= 40 else "中性")
+
+        indicators = {name: round(v, 1) for name, v, _ in legs}
+        indicators["PE"] = fin.pe_ttm
+        indicators.update(tech_parts)
+        parts_desc = "、".join(f"{name} {v:.0f}" for name, v, _ in legs)
         return ScoreBreakdown(
             score=total,
-            indicators={"成长": growth, "估值": valuation, "质量": round(quality, 1),
-                        "技术面": tech, **tech_parts},
-            rationale=(f"{ticker}：成长 {growth:.0f}、估值 {valuation:.0f}、质量 {quality:.0f}、"
-                       f"技术面 {tech:.0f}，公司面{tone}。"),
+            indicators=indicators,
+            rationale=f"{ticker}：{parts_desc}{norm}，公司面{tone}。",
             degraded=bool(notes), degraded_note="；".join(notes),
         )

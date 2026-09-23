@@ -36,7 +36,7 @@ def test_e2e_mock_analysis_produces_signals() -> None:
     assert signal.risks                             # 至少一条风险
     assert llm.llm_available() is False             # 无 key → 规则版（降级语义正确）
 
-    # 体制层：mock regime 为健康样本 → 硬约束不触发
+    # 体制层：mock regime 为健康样本 → 分级约束不触发
     assert outcome["regime"] is not None
     assert outcome["regime"].regime_broken() is False
     output = outcome["outputs"]["NVDA"]
