@@ -120,10 +120,17 @@ def judge(ctx: dict, ticker_ctx: dict) -> AnalysisResult:
                 [("system", SYSTEM_PROMPT), ("human", build_analysis_prompt(ctx))]
             )
             result.disclaimer = "本报告仅供个人研究参考，不构成投资建议。"
-            return result
+            ctx["raw_result"] = result.model_dump(mode="json")
+            ctx["result_source"] = "llm"
+            from analyzer.constraints import enforce
+            return enforce(result, rule_judge(ctx, ticker_ctx), ctx, ticker_ctx)
         except Exception as exc:
             print(f"[llm] 综合研判降级为规则版：{exc}")
-    return rule_judge(ctx, ticker_ctx)
+    ctx["result_source"] = "rule"
+    from analyzer.constraints import enforce
+    fallback = rule_judge(ctx, ticker_ctx)
+    ctx["raw_result"] = fallback.model_dump(mode="json")
+    return enforce(fallback, fallback, ctx, ticker_ctx)
 
 
 def rule_judge(ctx: dict, ticker_ctx: dict) -> AnalysisResult:

@@ -59,7 +59,7 @@ class Engine:
         band = band_of(total)
         notes = []
 
-        company_gate = False
+        company_gate = four.company.score < COMPANY_FLOOR
         if four.company.score < COMPANY_FLOOR and band == BAND_POSITIVE:
             band = _GATE_CEILING[band]
             company_gate = True

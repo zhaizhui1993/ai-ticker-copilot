@@ -29,7 +29,7 @@ def compute_pre_state(bars: list[DailyBar], t0: date) -> dict | None:
     if len(pre) < MIN_BARS:
         return None
     return {
-        "pre_drawdown_52w": _round(technicals.drawdown_from_high_pct(pre)),
+        "pre_drawdown_52w": _round(technicals.drawdown_from_high_pct(pre)) if len(pre) >= 252 else None,
         "pre_bias_ma200": _round(technicals.bias_vs_ma200_pct(pre)),  # <200 根 → None
         "pre_runup_20d": _round((pre[-1].close / pre[-21].close - 1) * 100
                                 if len(pre) >= 21 else None),

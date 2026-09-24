@@ -33,7 +33,7 @@ class FREDKeyMissing(Exception):
 class MacroCollector:
     name = "fred"
 
-    @ttl_cache("macro_series", ttl_seconds=12 * 3600)
+    @ttl_cache("macro_series_v14", ttl_seconds=12 * 3600)
     @network_retry
     def get_series(self, series_id: str) -> MacroPoint:
         if not settings.fred_api_key:
@@ -45,7 +45,7 @@ class MacroCollector:
                 "api_key": settings.fred_api_key,
                 "file_type": "json",
                 "sort_order": "desc",
-                "limit": 2,
+                "limit": 14 if series_id == "CPIAUCSL" else 10,
             },
             timeout=15,
         )
@@ -56,10 +56,13 @@ class MacroCollector:
             raise RuntimeError(f"FRED 系列 {series_id} 无有效观测")
         latest = valid[0]
         prev = valid[1] if len(valid) > 1 else None
+        prior_date = str(int(latest["date"][:4]) - 1) + latest["date"][4:]
+        year_ago = next((o for o in valid if o["date"] == prior_date), None)
         return MacroPoint(
             series_id=series_id,
             as_of=latest["date"],
             value=float(latest["value"]),
+            year_ago_value=float(year_ago["value"]) if year_ago else None,
             prev_value=float(prev["value"]) if prev else None,
         )
 

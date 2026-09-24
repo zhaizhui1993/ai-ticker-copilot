@@ -8,9 +8,10 @@
 - TTL 15min；版本钉死 yfinance==1.5.2 + curl-cffi 0.15.x
 """
 
+import math
 import random
 import time
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 
 import yfinance as yf
 
@@ -30,10 +31,12 @@ def _sleep() -> None:
 class MarketCollector:
     name = "yfinance"
 
-    @ttl_cache("market_bars", ttl_seconds=15 * 60)
+    @ttl_cache("market_bars_v14", ttl_seconds=15 * 60)
     @network_retry
     def _history(self, symbol: str, window: int) -> list[DailyBar]:
-        df = yf.Ticker(symbol).history(period=f"{window}d", interval="1d", auto_adjust=True)
+        df = yf.Ticker(symbol).history(start=(date.today() - timedelta(days=window * 2 + 15)).isoformat(), interval="1d", auto_adjust=True)
+        if df is not None:
+            df = df.tail(window)
         if df is None or df.empty:
             raise RuntimeError(f"yfinance 未返回数据：{symbol}（window={window}d）")
         bars = [
@@ -86,13 +89,15 @@ class MarketCollector:
             volume=last.volume or None,
         )
 
-    @ttl_cache("market_regime", ttl_seconds=15 * 60)
+    @ttl_cache("market_regime_v14", ttl_seconds=15 * 60)
     def get_index_regime(self) -> IndexRegime:
         """指数体制层（v1.1）：三大指数 vs MA200 + VIX + 费半 ATR14。"""
         levels: list[IndexLevel] = []
         sox_bars: list[DailyBar] | None = None
         for symbol in INDEX_SYMBOLS:
             bars = self._history(symbol, 300)
+            if technicals.sma(bars, 200) is None:
+                raise ValueError(f"{symbol}: MA200 数据不足")
             levels.append(IndexLevel(
                 symbol=symbol,
                 close=bars[-1].close,
@@ -107,10 +112,10 @@ class MarketCollector:
             sox_atr14=technicals.atr_pct(sox_bars) if sox_bars else None,
         )
 
-    @ttl_cache("market_financials", ttl_seconds=12 * 3600)
+    @ttl_cache("market_financials_v14", ttl_seconds=12 * 3600)
     def get_financials(self, symbol: str) -> Financials:
         """财报基本面（best-effort：字段缺失返回 None，由评分侧降级标注）。"""
-        result = Financials()
+        result = Financials(source="yfinance", collected_at=datetime.now(timezone.utc))
         try:
             tk = yf.Ticker(symbol)
             quarterly = tk.quarterly_financials
@@ -130,6 +135,30 @@ class MarketCollector:
             if result.roe is not None:
                 result.roe *= 100
             result.pe_ttm = info.get("trailingPE", None)
+            result.shares_outstanding = info.get("sharesOutstanding")
+            if info.get("totalDebt") is not None and info.get("totalCash") is not None:
+                result.net_debt = info["totalDebt"] - info["totalCash"]
+            _sleep()
+        except Exception:
+            pass
+        try:
+            cash = yf.Ticker(symbol).cashflow
+            if cash is not None and not cash.empty:
+                col = cash.columns[0]
+                def value(row):
+                    if row not in cash.index:
+                        return None
+                    v = float(cash.loc[row, col])
+                    return v if math.isfinite(v) else None
+                result.period_end = col.date()
+                result.operating_cash_flow = value("Operating Cash Flow")
+                capex = value("Capital Expenditure")
+                result.capital_expenditure = abs(capex) if capex is not None else None
+                result.free_cash_flow = value("Free Cash Flow")
+                if result.operating_cash_flow is not None and result.capital_expenditure is not None:
+                    result.free_cash_flow = result.operating_cash_flow - result.capital_expenditure
+                if result.free_cash_flow is not None:
+                    result.fcf_positive = result.free_cash_flow > 0
             _sleep()
         except Exception:
             pass

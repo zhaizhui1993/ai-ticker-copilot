@@ -69,6 +69,9 @@ def load_signal_records(tickers: list[str] | None = None,
             if not (row.signal and row.close):
                 continue
             analysis = row.analysis or {}
+            # Do not backdate a signal generated on a later calendar day to stale prices.
+            if analysis.get("price_date") and analysis["price_date"] != str(row.snapshot_date):
+                continue
             band = analysis.get("band")
             if not band and row.scores:
                 s = row.scores
@@ -81,10 +84,10 @@ def load_signal_records(tickers: list[str] | None = None,
             if sig_meta:
                 source = "rule" if "LLM 降级" in (sig_meta.get("reason") or "") else "llm"
             records.append({
-                "ticker": ticker, "date": row.snapshot_date, "action": row.signal,
+                "ticker": ticker, "date": date.fromisoformat(analysis["price_date"]) if analysis.get("price_date") else row.snapshot_date, "action": row.signal,
                 "band": band, "confidence": row.confidence, "close": row.close,
                 "regime_gate": bool(analysis.get("regime_gate", False)),
-                "source": source,
+                "source": analysis.get("source", source),
             })
     return records
 
@@ -118,9 +121,9 @@ def attach_forward_returns(records: list[dict], market) -> int:
                 continue
             for h in HORIZONS:
                 j = i + h
-                r[f"fwd_{h}d"] = (bars[j].close / r["close"] - 1) * 100 if j < len(bars) else None
+                r[f"fwd_{h}d"] = (bars[j].close / bars[i].close - 1) * 100 if j < len(bars) else None
             mae_window = bars[i + 1: i + 1 + MAE_WINDOW]
-            r["mae_20d"] = (min(b.low for b in mae_window) / r["close"] - 1) * 100 if mae_window else None
+            r["mae_20d"] = (min(b.low for b in mae_window) / bars[i].close - 1) * 100 if len(mae_window) == MAE_WINDOW else None
 
     # 全池等权同期基准（用行情自身收盘，避免快照 close 口径混用）
     for r in records:
@@ -130,7 +133,10 @@ def attach_forward_returns(records: list[dict], market) -> int:
     for d in {r["date"] for r in records}:
         for h in HORIZONS:
             vals = []
+            day_tickers = {r["ticker"] for r in records if r["date"] == d}
             for ticker, bars in bars_by_ticker.items():
+                if ticker not in day_tickers:
+                    continue
                 i = idx_by_ticker[ticker].get(d)
                 if i is not None and i + h < len(bars) and bars[i].close:
                     vals.append((bars[i + h].close / bars[i].close - 1) * 100)
@@ -242,31 +248,26 @@ def report_calibration(records: list[dict], source: str = "all") -> str:
     label = {"all": "全部", "llm": "仅 LLM 产物", "rule": "仅规则产物"}[source]
 
     lines = [f"== 校准曲线（{label}，{len(pool)} 条含置信度信号）=="]
-    bins: dict[int, list[dict]] = defaultdict(list)
-    for r in pool:
-        b = _confidence_bin(float(r["confidence"]))
-        if b is not None:
-            bins[b].append(r)
-    if not bins:
-        return "\n".join(lines + ["  （无数据：历史快照需含 confidence 字段）"])
-
-    header = f"{'置信度区间':<12}{'n':>5}{'平均置信':>9}{'20d胜率':>9}{'校准差':>8}{'超额胜率':>9}{'20d超额':>9}"
-    lines += [header, "-" * len(header)]
-    for i in sorted(bins):
-        lo, hi = CONFIDENCE_BINS[i]
-        group = bins[i]
-        confs = [float(r["confidence"]) for r in group]
-        f20 = [r["fwd_20d"] for r in group if r.get("fwd_20d") is not None]
-        e20 = [r["excess_20d"] for r in group if r.get("excess_20d") is not None]
-        avg_conf, win = _mean(confs), _rate(f20, lambda v: v > 0)
-        gap = (avg_conf * 100 - win) if win == win else float("nan")
-        hi_label = "1.0" if hi > 1 else f"{hi}"
-        lines.append(f"[{lo:.1f}, {hi_label}){'':<2}{len(group):>5}"
-                     f"{avg_conf:>9.2f}{win:>8.1f}%{gap:>+8.1f}"
-                     f"{_rate(e20, lambda v: v > 0):>8.1f}%{_fmt(_mean(e20)):>9}")
-    lines += ["", "读法：『校准差』= 平均置信度 − 实际 20d 胜率，长期应在 ±10pt 内收敛；",
-              "规则产物置信度恒 0.55/0.6，其『校准差』只反映胜率本身，校准检验以 LLM 产物为准；",
-              "各档『超额胜率』应随置信度升档而升（否则置信度没有区分度，可考虑弃用）。"]
+    lines.append("动作按 20d 超额定义成功：加仓>0、减仓<0；观望无方向，不计算胜率。")
+    for action in ("accumulate", "watch_add", "reduce", "watch"):
+        group = [r for r in pool if r["action"] == action]
+        if not group:
+            continue
+        lines.append(f"  {action}：{len(group)} 条")
+        for i, (lo, hi) in enumerate(CONFIDENCE_BINS):
+            bucket = [r for r in group if _confidence_bin(float(r["confidence"])) == i]
+            if not bucket:
+                continue
+            mature = [r for r in bucket if r.get("excess_20d") is not None]
+            label = f"[{lo:.1f}, {min(hi, 1.0):.1f})"
+            if action == "watch" or not mature:
+                lines.append(f"    {label} n={len(bucket)} 校准差 n/a（观望或窗口未成熟）")
+                continue
+            sign = -1 if action == "reduce" else 1
+            win = _rate([sign * r["excess_20d"] for r in mature], lambda v: v > 0)
+            avg = _mean([float(r["confidence"]) for r in mature])
+            lines.append(f"    {label} n={len(mature)} 平均置信 {avg:.2f} "
+                         f"动作成功率 {win:.1f}% 校准差 {avg * 100 - win:+.1f}pt")
     return "\n".join(lines)
 
 
@@ -355,7 +356,7 @@ def build_full_report(market, since: date | None = None) -> str:
     lines.append("## 验收口径（固定，防挑好看数字）")
     lines.append("- 分档单调：accumulate→reduce 的 20d/60d 超额均值单调递减")
     lines.append("- 增量信息：accumulate 组『跑赢基准』占比 >50%")
-    lines.append("- 校准：LLM 产物各档 |平均置信度 − 20d 胜率| ≤10pt")
+    lines.append("- 校准：LLM 产物各档 |平均置信度 − 20d动作超额成功率| ≤10pt")
     lines.append("- 组件有效性：偏离组不优于遵守组时收紧偏离权限；whipsaw 率 <50%")
     lines.append("- 样本纪律：每组 <30 条信号只作观察，不作结论；同段行情信号按 1 个有效样本折算")
     return "\n".join(lines)

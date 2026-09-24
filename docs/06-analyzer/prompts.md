@@ -1,5 +1,7 @@
 # 06-LLM ｜ prompt 设计要点
 
+> **v1.4 修订优先**：当前契约见 [AI 产业链研究方案修订](../11-ai-investment-revision.md)；下文保留早期设计背景，冲突处以修订为准。
+
 > 模块：06 LLM 研判层 ｜ 成分：prompt 设计 ｜ 对应代码：prompts/analysis.py、prompts/event_match.py、prompts/chat.py ｜ 实施阶段：P6（对话为增补）
 > 来源：原方案 §9.3
 

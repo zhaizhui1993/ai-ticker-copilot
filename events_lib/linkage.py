@@ -36,8 +36,8 @@ def compute_linkage(bars: list[DailyBar], t0: date) -> dict | None:
     if len(window) < 5:
         return None
 
-    peak = max(b.close for b in window[: PRE_WINDOW + 1])  # 前高（含 T0 收盘）
-    post = window[PRE_WINDOW:]                              # T0 起（T0 位于 window[PRE_WINDOW]）
+    peak = max(b.close for b in window[: i - window_start + 1])  # 前高（含 T0 收盘）
+    post = window[i - window_start:]                              # T0 起（T0 位于 window[PRE_WINDOW]）
     if not post or peak <= 0:
         return None
 

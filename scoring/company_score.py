@@ -87,15 +87,18 @@ class CompanyScorer:
             notes.append("PE 缺失或亏损（估值腿剔除，权重重归一化；亏损期看成长/质量）")
 
         # ③ 质量 30%
+        quality_parts = []
         if fin.gross_margin is not None:
-            quality = _clamp(50 + (fin.gross_margin - 40) * 0.5
-                             + (15 if fin.fcf_positive else -15)
-                             + ((fin.roe or 15) - 15) * 0.3)
+            quality_parts.append((_clamp(50 + (fin.gross_margin - 40) * 0.5), 0.5))
+        if fin.fcf_positive is not None:
+            quality_parts.append((80.0 if fin.fcf_positive else 20.0, 0.3))
+        if fin.roe is not None:
+            quality_parts.append((_clamp(50 + (fin.roe - 15) * 0.3), 0.2))
+        if quality_parts:
+            quality = sum(v * w for v, w in quality_parts) / sum(w for _, w in quality_parts)
             legs.append(("质量", quality, WEIGHT_QUALITY))
-        elif fin.fcf_positive is not None:
-            legs.append(("质量", 65 if fin.fcf_positive else 35, WEIGHT_QUALITY))
-        else:
-            notes.append("基本面数据缺失（质量腿剔除，权重重归一化）")
+        if len(quality_parts) < 3:
+            notes.append("质量证据不完整：缺失项不视为负值，已知子项归一化")
 
         # ④ 技术面 15%：分层（伤害 25% + 趋势 40% + 择时 35%）
         tech_parts = {}
@@ -147,6 +150,11 @@ class CompanyScorer:
 
         indicators = {name: round(v, 1) for name, v, _ in legs}
         indicators["PE"] = fin.pe_ttm
+        coverage = sum(x is not None for x in (
+            fin.revenue_yoy, fin.pe_ttm, fin.gross_margin, fin.fcf_positive, fin.roe)) / 5
+        indicators["data_coverage"] = coverage
+        indicators["fundamentals_ready"] = int(all(x is not None for x in (
+            fin.revenue_yoy, fin.gross_margin, fin.fcf_positive)))
         indicators.update(tech_parts)
         parts_desc = "、".join(f"{name} {v:.0f}" for name, v, _ in legs)
         return ScoreBreakdown(

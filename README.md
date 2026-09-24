@@ -5,6 +5,17 @@
 > 个人使用、本地运行、单用户；仅美股（USD 计价）。
 > **辅助参考**：不自动下单、不接入券商、不构成投资建议。
 
+## v1.4 修复与当前边界
+
+方案见 [AI 产业链研究修订](docs/11-ai-investment-revision.md)。本版修复财务缺失处理、完整产业篮子、事件归一化、共享财报/FOMC窗口、LLM输出硬约束、CPI同比与审计输入；历史指标初始化见：
+
+```bash
+uv run python scripts/initialize_history.py --include-db
+uv run python scripts/initialize_history.py --initialize
+```
+
+总分仍为研究排序；SEC多年财务、情景/反向估值和真实组合仓位尚未实现。X采集已实现但评分情绪尚未接入；AI词频未接入。下文早期功能说明涉及这些能力时，以本段及v1.4方案为准。每日快照仅供展示，完整输入与原始/约束后输出写入追加日志；分析按美东日期执行，不再直接复用同日旧信号。
+
 ## 功能特性
 
 **分析决策**

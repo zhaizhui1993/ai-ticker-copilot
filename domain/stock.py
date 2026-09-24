@@ -20,6 +20,10 @@ class Segment(str, Enum):
     SOFTWARE = "software"
     POWER = "power"
     ETF = "etf"
+    CUSTOM_INTERCONNECT = "custom_interconnect"
+    OPTICAL = "optical"
+    TURNAROUND = "turnaround"
+    ENERGY_INFRA = "energy_infra"
     OTHER = "other"
 
 
@@ -78,3 +82,12 @@ class Financials(BaseModel):
     fcf_positive: bool | None = None        # 自由现金流是否为正
     roe: float | None = None                # 净资产收益率 %
     pe_ttm: float | None = None             # 当前 PE(TTM)，分位由评分侧计算
+
+    operating_cash_flow: float | None = None
+    capital_expenditure: float | None = None  # 正数现金支出
+    free_cash_flow: float | None = None
+    net_debt: float | None = None
+    shares_outstanding: float | None = None
+    period_end: date | None = None
+    collected_at: datetime | None = None
+    source: str = "unknown"

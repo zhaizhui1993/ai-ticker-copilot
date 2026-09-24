@@ -46,19 +46,23 @@ class MacroScorer:
 
         indicators["VIX"] = vix
         subs["VIX"] = self._score_vix(vix)
-        indicators["CPI_同比近似"] = self._cpi_yoy_proxy(series.get("CPIAUCSL"))
+        indicators["CPI_同比"] = self._cpi_yoy_proxy(series.get("CPIAUCSL"))
 
         total = round(sum(subs[k] * w for k, w in WEIGHTS.items()), 1)
 
         missing = [k for k in WEIGHTS if k != "VIX" and series.get(k) is None]
+        if vix is None:
+            missing.append("VIX")
+        if self._cpi_yoy_proxy(series.get("CPIAUCSL")) is None and "CPIAUCSL" not in missing:
+            missing.append("CPI去年同月")
         note = f"宏观数据缺失：{','.join(missing)}（缺失项计中性 50）" if missing else ""
 
         fed = series.get("FEDFUNDS")
-        cpi = indicators["CPI_同比近似"]
+        cpi = indicators["CPI_同比"]
         tone = "偏多" if total >= 60 else ("偏空" if total <= 40 else "中性")
         rationale = (
             f"联邦利率{_dir(fed.value if fed else None, fed.prev_value if fed else None)}"
-            f"（{fed.value if fed else '-'}%）、CPI 同比(近似) {cpi if cpi is not None else '-'}%、"
+            f"（{fed.value if fed else '-'}%）、CPI 同比 {cpi if cpi is not None else '-'}%、"
             f"VIX {vix if vix is not None else '-'}，宏观面{tone}。"
         )
         return ScoreBreakdown(
@@ -117,7 +121,7 @@ class MacroScorer:
 
     @staticmethod
     def _cpi_yoy_proxy(p: MacroPoint | None) -> float | None:
-        """CPI 同比近似：月度环比年化（（v/prev)^12-1）。P6+ 可升级为取 13 期观测精算。"""
-        if p is None or p.prev_value in (None, 0):
+        """CPI 同比：最新指数 / 去年同月指数 - 1；缺失不使用环比年化替代。"""
+        if p is None or p.year_ago_value in (None, 0):
             return None
-        return round(((p.value / p.prev_value) ** 12 - 1) * 100, 2)
+        return round((p.value / p.year_ago_value - 1) * 100, 2)

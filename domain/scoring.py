@@ -37,6 +37,7 @@ class MacroPoint(BaseModel):
     series_id: str                  # 如 FEDFUNDS / DGS10 / CPIAUCSL
     as_of: str                      # 观测日期（FRED 为字符串 yyyy-mm-dd）
     value: float
+    year_ago_value: float | None = None
     prev_value: float | None = None  # 前值（方向判断用）
 
 

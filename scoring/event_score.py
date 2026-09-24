@@ -13,6 +13,8 @@
   （实证：2026-07 回调深度主要由事件前乖离率决定）。
 """
 
+from collections import defaultdict
+
 from domain.events import EventMatchResult
 from domain.scoring import ScoreBreakdown
 
@@ -66,7 +68,15 @@ class EventScorer:
         category_by_event: {event_id: category.value}，供分类型衰减查表；
         current_state: 当前标的状态 {"bias_ma200": 乖离%, "drawdown_52w": 回撤%}，
         供状态缺口调节（v1.3）。"""
-        matches = matches or []
+        groups = defaultdict(dict)
+        for match, age in matches or []:
+            if match.similarity >= 0.6 and age >= 0:
+                key = match.current_event_id or match.event_id
+                old = groups[key].get(match.event_id)
+                if old is None or match.similarity > old[0].similarity:
+                    groups[key][match.event_id] = (match, age)
+        matches = [pair for group in groups.values() for pair in group.values()]
+        weight_sums = {key: sum(m.similarity for m, _ in group.values()) for key, group in groups.items()}
         category_by_event = category_by_event or {}
         indicators: dict = {"matched": len(matches)}
 
@@ -83,7 +93,10 @@ class EventScorer:
             factor = _state_factor(match, current_state)
             if factor != 1.0:
                 state_factors.append(factor)
-            analogy_score += (match.direction * match.magnitude * match.similarity
+            key = match.current_event_id or match.event_id
+            confidence = max(m.similarity for m, _ in groups[key].values())
+            weight = match.similarity / weight_sums[key] * confidence
+            analogy_score += (match.direction * match.magnitude * weight
                               * freshness * discount * factor)
         analogy_score = _clamp(analogy_score * 100, -100, 100)
         indicators["类比分"] = round(analogy_score, 1)

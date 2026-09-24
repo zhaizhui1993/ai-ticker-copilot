@@ -10,3 +10,6 @@ stocks: []
 #     segment: gpu
 #     position: holding
 #     cost_basis: 120.5
+
+# 扩展产业分类：custom_interconnect（MRVL）、optical（LITE/COHR）、
+# turnaround（INTC）、energy_infra（BE）；GOOG/GOOGL 可用 cloud。

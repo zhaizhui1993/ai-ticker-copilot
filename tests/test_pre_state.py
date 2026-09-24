@@ -38,7 +38,7 @@ def test_compute_pre_state_excludes_event_day_and_short_history() -> None:
     t0 = bars[-5].date                          # 事件日 = 下跌首日 → 前状态不含下跌
     state = pre_state.compute_pre_state(bars, t0)
     assert state is not None
-    assert state["pre_drawdown_52w"] == 0.0     # 只看 T0 前（全平）
+    assert state["pre_drawdown_52w"] is None    # 不足252根，不能标称52周回撤
     assert state["pre_bias_ma200"] is None      # 不足 200 根 → 乖离缺失（不硬造）
     assert state["pre_runup_20d"] == 0.0
 

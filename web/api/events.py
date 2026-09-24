@@ -9,8 +9,6 @@ from config.settings import settings
 
 router = APIRouter()
 
-# 静态日程（每年人工更新一次；docs/04-events/calendar.md）
-FOMC_DATES_2026 = ["2026-10-28", "2026-12-09"]
 MACRO_RELEASE_RULE = "CPI/PPI/非农 惯例美东 8:30 发布（月中/月初）"
 
 
@@ -42,29 +40,20 @@ def poll_events(since: str | None = None) -> dict:
 
 @router.get("/api/calendar")
 def calendar() -> dict:
-    today = date.today()
-    upcoming = []
-
-    for raw in FOMC_DATES_2026:
-        d = date.fromisoformat(raw)
-        if today <= d <= today + timedelta(days=7):
-            upcoming.append({"date": raw, "type": "FOMC", "name": "美联储议息会议"})
-
-    # 股票池财报日（需行情源；降级跳过）
-    try:
-        from collectors import get_market
-        from config.loader import load_stocks
-        market = get_market()
-        for stock in load_stocks():
-            for d in market.get_earnings_dates(stock.symbol, limit=2):
-                if today <= d <= today + timedelta(days=7):
-                    upcoming.append({"date": str(d), "type": "earnings",
-                                     "name": f"{stock.symbol} 财报"})
-    except Exception:
-        pass
-
-    upcoming.sort(key=lambda item: item["date"])
-    return {"today": str(today), "upcoming": upcoming, "note": MACRO_RELEASE_RULE}
+    from events_lib.calendar import market_today, event_calendar
+    from collectors import get_market
+    from config.loader import load_stocks
+    today = market_today()
+    market = get_market()
+    upcoming, notes = [], []
+    for stock in load_stocks():
+        result = event_calendar(market, stock.symbol, today, days=7)
+        upcoming.extend(result["events"])
+        if result["note"]:
+            notes.append(f"{stock.symbol}: {result['note']}")
+    unique = {(e["date"], e["name"]): e for e in upcoming}
+    return {"today": str(today), "upcoming": sorted(unique.values(), key=lambda e: e["date"]),
+            "note": "；".join(notes + [MACRO_RELEASE_RULE])}
 
 
 @router.get("/api/events/lib")

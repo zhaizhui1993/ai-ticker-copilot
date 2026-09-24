@@ -6,10 +6,16 @@ v1.2（P1-4）：数据缺失的子腿不再塞中性 50，而是显式重归一
 ——当前财报动量与 AI 词频常缺，若塞两个 50 会把相对强弱信号稀释过半。
 """
 
+from statistics import median
+
 from domain.stock import DailyBar, Financials
 from domain.scoring import ScoreBreakdown
 
 BASKETS: dict[str, list[str]] = {
+    "custom_interconnect": ["MRVL", "AVGO"],
+    "optical": ["LITE", "COHR"],
+    "turnaround": ["INTC"],
+    "energy_infra": ["BE"],
     "gpu": ["NVDA", "AMD"],
     "foundry": ["TSM"],
     "equipment": ["ASML", "AMAT", "LRCX"],
@@ -69,7 +75,7 @@ class IndustryScorer:
         ]
         if yoy_values:
             yoy_values.sort()
-            mid = yoy_values[len(yoy_values) // 2]
+            mid = median(yoy_values)
             earn = 85 if mid >= 30 else 65 if mid >= 10 else 50 if mid >= 0 else 25
             legs.append(("财报动量", earn, WEIGHT_EARNINGS))
         elif symbols:

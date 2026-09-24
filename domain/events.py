@@ -39,7 +39,8 @@ class TickerImpact(BaseModel):
     direction: Literal[-1, 0, 1]       # -1 负 / 0 中性 / +1 正
     magnitude: float = Field(ge=0, le=1)
     drawdown: float | None = None      # 最大回撤 %（如 -20.3）
-    drawdown_days: int | None = None   # 达底自然天数
+    metric_source: str | None = None
+    drawdown_days: int | None = None   # 达底交易日数（新回填口径）
     recovery_days: int | None = None   # 收复前高天数（None=至今未收复）
     # ---- 事件前状态（T0 前一日收盘口径；scripts/backfill_pre_state.py 回填）----
     # 作用：历史回撤 = f(事件强度, 标的状态)，只记结果不记状态会把不同位置的结果做无条件平均
@@ -126,6 +127,7 @@ class EventMatchResult(BaseModel):
     magnitude: float = Field(ge=0, le=1, default=0.5)
     affected_tickers: list[str] = Field(default_factory=list)
     analogy_notes: str = ""                # 必须给出可核对的匹配理由
+    current_event_id: str | None = None
     difference: str = ""                   # "这次哪里不一样"：与历史事件的关键差异（利率/产业阶段/量级），LLM 必填，空=规则降级产物
     # ---- 历史样本事件前状态（v1.3：代码从 HistoricalEvent 附加，非 LLM 产出）----
     # 供 EventScorer 按状态缺口调节 magnitude：当前比历史更拥挤 → 预期冲击放大
