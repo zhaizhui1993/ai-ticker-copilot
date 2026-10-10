@@ -22,6 +22,9 @@ def build_chat_context() -> dict:
     """组装对话上下文（各部分独立降级，缺什么标什么）。"""
     from config.loader import EMPTY_POOL_MESSAGE, load_stocks
     from events_lib.loader import load_seed_events
+    from events_lib.calendar import market_today
+    from domain.stock import DailyBar
+    from scoring.valuation import assess_valuation
 
     degraded = []
     stocks = load_stocks()
@@ -39,6 +42,13 @@ def build_chat_context() -> dict:
             rows = repository.get_snapshots(stock.symbol, since=date.today() - timedelta(days=7))
             if rows:
                 last = rows[-1]
+                price_bars = [DailyBar(date=last.snapshot_date, open=last.close, high=last.close,
+                                      low=last.close, close=last.close)] if last.close else []
+                valuation = assess_valuation(stock.valuation, price_bars, market_today())
+                signal = last.signal
+                if signal in {"accumulate", "watch_add"} and (
+                        not valuation.allows_add or (last.analysis or {}).get("version") != "1.5"):
+                    signal = "watch（原加仓信号需重新分析）"
                 scores = ""
                 if last.scores:
                     f = last.scores
@@ -46,9 +56,12 @@ def build_chat_context() -> dict:
                               f"/产业{f.industry.score}/公司{f.company.score}")
                 cap_note = ""
                 cap = (last.analysis or {}).get("position_cap")
+                if not valuation.allows_add:
+                    cap = 0.0
                 if cap is not None and cap < 1.0:
                     cap_note = f"｜仓位上限系数 {cap:g}"
-                lines.append(f"{stock.symbol}：信号 {last.signal}｜总分见分析{scores}{cap_note}")
+                lines.append(f"{stock.symbol}：信号 {signal}｜快照日期 {last.snapshot_date}｜总分见分析{scores}{cap_note}"
+                             f"｜当前估值检查：{valuation.reason}（allows_add={valuation.allows_add}）")
         if lines:
             latest = "\n".join(lines)
     except Exception as exc:
@@ -80,12 +93,13 @@ def build_chat_context() -> dict:
                 f"/前5日 {r.prior_5d_pct if r.prior_5d_pct is not None else '-'}%"
                 f"/距52周高 {r.drawdown_52w if r.drawdown_52w is not None else '-'}%"
                 + (f"/量比 {r.volume_ratio}" if r.volume_ratio is not None else "")
+                + (f"/口径：{r.note}" if r.note else "")
                 for r in e.price_reactions
             ]
             return "｜个股反应：" + "；".join(parts)
 
         events_desc = "\n".join(
-            f"- [{e.occurred_date}][{e.scope.value}/{e.category.value}] {e.title}"
+            f"- [{e.reference_date}, {e.date_basis}, {e.status}][{e.scope.value}/{e.category.value}] {e.title}"
             f"（涉及 {'、'.join(e.tickers_mentioned) or '未指明'}）{_reactions(e)}"
             for e in events) or "（暂无入库事件）"
     except Exception as exc:

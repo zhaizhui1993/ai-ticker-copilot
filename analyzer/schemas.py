@@ -5,13 +5,17 @@ with_structured_output 对顶层 list 支持不稳，统一包一层 Batch 模�
 """
 
 from pydantic import BaseModel, Field
+from datetime import date
 
 from domain.events import EventCategory, EventMatchResult, EventScope
 
 
 class ExtractedEvent(BaseModel):
-    """LLM 事件抽取的单条产物（event_id 由调用方按日期序号补齐）"""
+    """LLM 引用原文编号；身份和来源由调用方验证后补齐。"""
 
+    article_index: int = Field(ge=1)
+    occurred_date: date | None = None
+    occurred_date_quote: str = ""
     title: str = Field(max_length=200)
     scope: EventScope
     category: EventCategory

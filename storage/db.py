@@ -85,6 +85,26 @@ DDL_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='当前事件（新闻管道产物，准实时）'
     """,
     "CREATE INDEX idx_current_events_date ON current_events(occurred_date)",
+    """
+    CREATE TABLE IF NOT EXISTS raw_news_articles (
+      article_id CHAR(64) PRIMARY KEY,
+      payload_json JSON NOT NULL,
+      fetched_at DATETIME NOT NULL,
+      processed_at DATETIME NULL,
+      INDEX idx_raw_pending (processed_at, fetched_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS event_changes (
+      change_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      event_id VARCHAR(64) NOT NULL,
+      before_json JSON NOT NULL,
+      after_json JSON NOT NULL,
+      reason TEXT NOT NULL,
+      changed_at DATETIME NOT NULL,
+      INDEX idx_event_changes (event_id, change_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
     # 分析日志（只追加，保留全量历史）
     """
     CREATE TABLE IF NOT EXISTS analysis_runs (
@@ -144,7 +164,11 @@ def init_schema(database: str | None = None) -> None:
         )
     with _connect(database) as conn, conn.cursor() as cursor:
         for ddl in DDL_STATEMENTS:
-            cursor.execute(ddl)
+            try:
+                cursor.execute(ddl)
+            except pymysql.err.OperationalError as exc:
+                if not (ddl.startswith("CREATE INDEX ") and exc.args[0] == 1061):
+                    raise
         for stmt in MIGRATION_STATEMENTS:
             try:
                 cursor.execute(stmt)

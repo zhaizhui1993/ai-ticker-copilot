@@ -84,6 +84,7 @@ def _fetch_feed(source: str, url: str) -> list[RawArticle]:
                 raw_url=getattr(entry, "link", "") or "",
                 title=_clean(getattr(entry, "title", "")),
                 summary=_clean(getattr(entry, "summary", ""))[:500],
+                published_at=published,
                 fetched_at=now,
             ))
         return articles
@@ -141,50 +142,34 @@ def _notify_macos(new_count: int) -> None:
 
 
 def poll_once(pool_tickers: list[str]) -> dict:
-    """事件管道单轮：抓取→去重→预过滤→抽取→入库。返回本轮摘要（不触发分析）。"""
-    articles = fetch_all_articles(pool_tickers)
-    hashes = [repository.article_hash(a.raw_url, a.title) for a in articles]
+    """Archive first; retry pending reports even if they have disappeared from RSS."""
+    return process_articles(fetch_all_articles(pool_tickers), pool_tickers)
 
+
+def process_articles(articles: list[RawArticle], pool_tickers: list[str]) -> dict:
+    new_count, filtered, events = 0, [], []
     try:
-        existing = repository.has_title_hashes(hashes)
-        db_ok = True
+        new_count = repository.store_raw_articles(articles)
+        pending = repository.pending_raw_articles(limit=100)
+        filtered = prefilter(pending, pool_tickers)
+        # Bound LLM batch size while preserving original IDs across calls.
+        for offset in range(0, len(filtered), 20):
+            events.extend(llm.extract_events(filtered[offset:offset + 20], pool_tickers))
+        if events:
+            try:
+                from collectors import get_market
+                from events_lib.reaction import enrich_events
+                enrich_events(events, get_market())
+            except Exception as exc:
+                print(f"[news] 行情背景富化失败：{exc}")
+        stored = repository.complete_news_batch(pending, events)
     except Exception as exc:
-        print(f"[news] 去重查询失败（DB 不可用？）：{exc}")
-        return {"fetched": len(articles), "new": 0, "filtered": 0,
+        print(f"[news] 本轮处理失败，已归档原文保持待重试：{exc}")
+        return {"fetched": len(articles), "new": new_count, "filtered": len(filtered),
                 "stored": 0, "db_error": str(exc), "events": []}
-
-    new_articles = [a for a, h in zip(articles, hashes) if h not in existing]
-    filtered = prefilter(new_articles, pool_tickers)
-    events = llm.extract_events(filtered, pool_tickers)
-
-    # 富化关联个股价格反应（行情失败按 ticker 降级，不影响入库）
-    if events:
-        try:
-            from collectors import get_market
-            from events_lib.reaction import enrich_events
-            enrich_events(events, get_market())
-        except Exception as exc:
-            print(f"[news] 价格反应富化降级：{exc}")
-
-    stored = 0
-    if events:
-        event_hashes = [repository.article_hash(e.raw_url, e.title) for e in events]
-        try:
-            stored = repository.put_current_events(events, event_hashes)
-            _notify_macos(stored)
-        except Exception as exc:
-            print(f"[news] 事件入库失败：{exc}")
-            return {"fetched": len(articles), "new": len(new_articles),
-                    "filtered": len(filtered), "stored": 0,
-                    "db_error": str(exc), "events": events}
-
-    return {
-        "fetched": len(articles),
-        "new": len(new_articles),
-        "filtered": len(filtered),
-        "stored": stored,
-        "events": events,
-    }
+    _notify_macos(stored)
+    return {"fetched": len(articles), "new": new_count, "filtered": len(filtered),
+            "processed": len(pending), "stored": stored, "events": events}
 
 
 class NewsCollector:

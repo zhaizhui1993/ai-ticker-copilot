@@ -5,11 +5,12 @@
      docs/10-module-contracts.md §10.2②（EventMatchResult / AnalogyConclusion / RawArticle）
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Literal
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 class EventCategory(str, Enum):
@@ -91,10 +92,29 @@ class PriceReaction(BaseModel):
     note: str = ""                        # 如"事件日未收盘，取最近交易日"
 
 
+class RawArticle(BaseModel):
+    """Immutable original report identity; timestamps use UTC."""
+
+    source: str
+    raw_url: str
+    title: str
+    summary: str = ""
+    published_at: datetime | None = None
+    fetched_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator("published_at", "fetched_at")
+    @classmethod
+    def utc_timestamp(cls, value):
+        if value is None:
+            return value
+        return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value).astimezone(timezone.utc)
+
+
 class CurrentEvent(BaseModel):
     event_id: str                      # "2026-09-20-001"
     title: str
-    occurred_date: date
+    occurred_date: date | None = None
+    occurred_date_quote: str = ""
     scope: EventScope
     category: EventCategory
     summary: str = Field(max_length=300)
@@ -103,16 +123,36 @@ class CurrentEvent(BaseModel):
     source: str
     raw_url: str = ""                  # 去重键之一
     price_reactions: list[PriceReaction] = Field(default_factory=list)  # 入库时富化
-
-
-class RawArticle(BaseModel):
-    """新闻管道的原始文章（去重键 = raw_url + 标题 hash）"""
-
-    source: str
-    raw_url: str
-    title: str
-    summary: str = ""
+    article_id: str | None = None
+    evidence: list[RawArticle] = Field(default_factory=list)
+    published_at: datetime | None = None
     fetched_at: datetime | None = None
+    status: Literal["active", "resolved", "retracted", "merged"] = "active"
+    merged_into: str | None = None
+    influence_start_date: date | None = None  # 合并时只延续原影响年龄
+
+    @computed_field
+    @property
+    def reference_date(self) -> date | None:
+        if self.occurred_date:
+            return self.occurred_date
+        timestamp = self.published_at or self.fetched_at
+        if timestamp is None:
+            return None
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        return timestamp.astimezone(ZoneInfo("America/New_York")).date()
+
+    @computed_field
+    @property
+    def date_basis(self) -> str:
+        if self.occurred_date:
+            return "occurred"
+        return "published" if self.published_at else "fetched" if self.fetched_at else "unknown"
+
+    @property
+    def impact_date(self) -> date | None:
+        return self.influence_start_date or self.reference_date
 
 
 # ---------- 类比产物（matcher 输出） ----------
@@ -128,6 +168,7 @@ class EventMatchResult(BaseModel):
     affected_tickers: list[str] = Field(default_factory=list)
     analogy_notes: str = ""                # 必须给出可核对的匹配理由
     current_event_id: str | None = None
+    current_category: EventCategory | None = None
     difference: str = ""                   # "这次哪里不一样"：与历史事件的关键差异（利率/产业阶段/量级），LLM 必填，空=规则降级产物
     # ---- 历史样本事件前状态（v1.3：代码从 HistoricalEvent 附加，非 LLM 产出）----
     # 供 EventScorer 按状态缺口调节 magnitude：当前比历史更拥挤 → 预期冲击放大

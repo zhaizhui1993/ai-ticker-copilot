@@ -7,6 +7,7 @@ P6 起 analyzer/llm.extract_events 优先走 LLM 批量单次调用。
 from datetime import date
 
 from domain.events import CurrentEvent, EventCategory, EventScope, RawArticle
+from events_lib.identity import event_provenance
 
 # 关键词 → (scope, category) 猜测表；顺序即优先级（越靠前越具体）
 _RULES: list[tuple[list[str], EventScope, EventCategory]] = [
@@ -34,9 +35,7 @@ def extract_events(
     seq_start: int = 1,
     today: date | None = None,
 ) -> list[CurrentEvent]:
-    today = today or date.today()
     events: list[CurrentEvent] = []
-    seq = seq_start
     for article in articles:
         text = f"{article.title} {article.summary}"
         scope, category = _guess_scope_category(text)
@@ -44,16 +43,12 @@ def extract_events(
             continue  # 规则版宁缺勿滥；LLM 版会做更宽的判断
         mentioned = [t for t in pool_tickers if t.lower() in text.lower()]
         events.append(CurrentEvent(
-            event_id=f"{today:%Y-%m-%d}-{seq:03d}",
+            **event_provenance(article),
             title=article.title[:200],
-            occurred_date=today,
             scope=scope,
             category=category or EventCategory.TECH,
             summary=article.summary[:300] or article.title[:300],
             keywords=[],
             tickers_mentioned=mentioned,
-            source=article.source,
-            raw_url=article.raw_url,
         ))
-        seq += 1
     return events

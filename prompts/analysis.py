@@ -23,6 +23,10 @@ SYSTEM_PROMPT = """你是一名美股AI产业链研究分析师，区分经营�
    是计划新增仓位的比例上限，照抄每股输入值（0/0.3/1），不是总资产比例；使用"信号为加仓倾向"等中性措辞。
 8. market_summary 用中文 2~3 句概括宏观与事件面。
 9. 结尾 disclaimer 固定为："本报告仅供个人研究参考，不构成投资建议。"
+10. 【估值准入】每股 valuation.allows_add 不是 true 时，accumulate 和 watch_add 均禁止，
+    最高 watch，新增仓位系数为0；已有减仓依据可继续 reduce。说明 valuation.reason。
+    正PE、增长、动量和高总分不能代替复核证据，不能编造或修改估值假设。
+    安全边际是输入假设下的计算结果，不代表内在价值已被证实。
 """
 
 USER_TEMPLATE = """分析日期：{date}（美东）
@@ -41,6 +45,7 @@ PER_TICKER_TEMPLATE = """{ticker}（{segment}/{position}）：总分 {total}（�
   四维：宏观 {macro:.0f} / 事件 {event:.0f} / 产业 {industry:.0f} / 公司 {company:.0f}
   {rationales}
   指标原始值：{indicators}
+  估值证据及准入：{valuation}
   事件类比：{analogy}
   事件窗口：event_window={event_window}{event_desc}
   X 观点摘要：{x_summary}

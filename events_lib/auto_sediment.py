@@ -25,7 +25,7 @@ def sediment_due_events(today: date) -> list[str]:
     from collectors import get_market
     from storage import repository
 
-    current_events = repository.list_current_events(limit=200)
+    current_events = repository.list_current_events(limit=None)
     if not current_events:
         return []
 
@@ -35,6 +35,8 @@ def sediment_due_events(today: date) -> list[str]:
 
     created: list[str] = []
     for event in current_events:
+        if event.occurred_date is None or event.status in {"retracted", "merged"}:
+            continue
         age = (today - event.occurred_date).days
         window = next((w for w in SEDIMENT_WINDOWS
                        if abs(age - w) <= WINDOW_TOLERANCE), None)

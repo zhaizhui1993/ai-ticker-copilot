@@ -1,6 +1,7 @@
 """Deterministic final checks, shared by LLM and fallback outputs."""
 from collections import Counter
 from domain.signal import Action, AnalysisResult
+from domain.valuation import ValuationAssessment
 
 RANK = {Action.REDUCE: 0, Action.WATCH: 1, Action.WATCH_ADD: 2, Action.ACCUMULATE: 3}
 
@@ -16,17 +17,30 @@ def enforce(result: AnalysisResult, fallback: AnalysisResult, ctx: dict, tickers
         if ctx.get("regime_gate") or data.get("company_gate"):
             ceiling, cap = Action.WATCH_ADD, 0.3 if ctx.get("regime_gate") else 1.0
             notes.append("体制或公司短板约束")
-        if ctx.get("regime_unknown") or data.get("data_insufficient") or data.get("calendar_unknown"):
+        if (ctx.get("regime_unknown") or ctx.get("event_data_unknown")
+                or data.get("data_insufficient") or data.get("calendar_unknown")):
             ceiling, cap = Action.WATCH, 0.0
             notes.append("关键数据或日历不足，暂不增加风险")
         if data.get("event_window"):
             ceiling, cap = Action.WATCH, 0.0
             notes.append("等待" + data.get("event_desc", "重要事件") + "落地")
+        assessment = ValuationAssessment.model_validate(data["valuation"]) if data.get("valuation") else ValuationAssessment(
+            status="missing", reason="缺少经复核的估值证据")
+        signal.valuation = assessment  # Never trust the model's assessment.
+        if not assessment.allows_add:
+            ceiling, cap = Action.WATCH, 0.0
+            notes.append("估值准入未通过：" + assessment.reason)
         if RANK[signal.action] > RANK[ceiling]:
             signal.action = ceiling
-            signal.reason += "；系统约束：" + "；".join(notes)
+            # Replace incompatible add-risk narrative with reviewable rule facts.
+            signal.reason = defaults[ticker].reason + "；系统约束：" + "；".join(notes)
+            signal.price_target_hint = None
             signal.confidence = min(signal.confidence, 0.5)
+        elif not assessment.allows_add and assessment.reason not in signal.reason:
+            signal.reason += "；估值准入未通过：" + assessment.reason
         signal.position_cap = cap
+        if cap == 0:
+            signal.price_target_hint = None
         signal.risks = list(dict.fromkeys(signal.risks + notes)) or ["研究假设可能无法兑现"]
         signals.append(signal)
     return result.model_copy(update={"signals": signals})

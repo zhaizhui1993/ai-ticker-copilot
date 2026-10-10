@@ -22,7 +22,9 @@ SIMILARITY_THRESHOLD = 0.6  # ≥0.6 才进入类比聚合
 # ---------- ① 硬检索 ----------
 
 
-def _month_closeness(a_month: int, b_month: int) -> bool:
+def _month_closeness(a_month: int | None, b_month: int) -> bool:
+    if a_month is None:
+        return False
     diff = abs(a_month - b_month)
     return diff <= 1 or diff >= 11  # 同月或相邻月（跨年 12↔1 视为相邻）
 
@@ -35,7 +37,7 @@ def hard_retrieve(
     """对事件库全量规则打分排序（库小，O(N) 即可），取 top-k。"""
     event_keywords = {kw.lower() for kw in event.keywords}
     event_tickers = set(event.tickers_mentioned)
-    event_month = event.occurred_date.month
+    event_month = event.reference_date.month if event.reference_date else None
 
     scored: list[tuple[float, str, HistoricalEvent]] = []
     for candidate in lib:
@@ -61,6 +63,7 @@ def rule_rerank(event: CurrentEvent, candidates: list[HistoricalEvent]) -> list[
     """规则版精排：相似度由四个可核对成分构成（P6 替换为 LLM 精排）。"""
     event_keywords = {kw.lower() for kw in event.keywords}
     event_tickers = set(event.tickers_mentioned)
+    event_month = event.reference_date.month if event.reference_date else None
 
     results: list[EventMatchResult] = []
     for candidate in candidates:
@@ -74,7 +77,7 @@ def rule_rerank(event: CurrentEvent, candidates: list[HistoricalEvent]) -> list[
         cand_tickers = {t.ticker for t in candidate.tickers_affected}
         if event_tickers:
             parts += 0.2 * min(1.0, len(event_tickers & cand_tickers))
-        if _month_closeness(event.occurred_date.month, candidate.start_date.month):
+        if _month_closeness(event_month, candidate.start_date.month):
             parts += 0.1
 
         # 方向/强度沿用库内记录的众数水平（规则版无法独立判断）
@@ -93,7 +96,7 @@ def rule_rerank(event: CurrentEvent, candidates: list[HistoricalEvent]) -> list[
                 f"规则版精排：category{'一致' if candidate.category == event.category else '不同'}"
                 f" +关键词交集{len(event_keywords & cand_keywords)}词"
                 f" +标的交集{len(event_tickers & cand_tickers)}个"
-                f"{' +月份邻近' if _month_closeness(event.occurred_date.month, candidate.start_date.month) else ''}"
+                f"{' +月份邻近' if _month_closeness(event_month, candidate.start_date.month) else ''}"
                 "（未经 LLM 校验）"
             ),
         ))

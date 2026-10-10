@@ -10,6 +10,19 @@ stocks: []
 #     segment: gpu
 #     position: holding
 #     cost_basis: 120.5
+#     # 以下仅为格式示例，数值不代表任何公司的当前估值。请填写自己的研究并复核。
+#     valuation:
+#       method: scenario              # dcf / multiples / scenario / sotp
+#       conservative_value: 100.0      # USD/股，考虑现金、债务、摊薄后的保守价值
+#       as_of: '2026-10-09'
+#       valid_until: '2026-11-09'
+#       minimum_margin: 0.25           # 自定安全边际；0.25 表示25%，无系统默认值
+#       assumptions:
+#         - '在此记录收入、利润率、现金流、资本开支和摊薄等关键假设'
+#       sources:
+#         - '在此填写财报/公告链接及具体期次或页码'
+#       rationale: '说明保守价值的计算过程、熊市情景及失效条件'
+#       reviewed: false               # 完成复核后才改为 true；默认禁止加仓
 
 # 扩展产业分类：custom_interconnect（MRVL）、optical（LITE/COHR）、
 # turnaround（INTC）、energy_infra（BE）；GOOG/GOOGL 可用 cloud。

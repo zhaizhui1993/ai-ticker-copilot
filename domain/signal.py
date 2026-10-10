@@ -7,6 +7,7 @@
 from enum import Enum
 
 from pydantic import BaseModel, Field
+from domain.valuation import ValuationAssessment
 
 DISCLAIMER = "本报告仅供个人研究参考，不构成投资建议。"
 
@@ -26,6 +27,7 @@ class TickerSignal(BaseModel):
     risks: list[str] = Field(default_factory=list, min_length=0)
     price_target_hint: str | None = None  # 软提示，如"等回踩 MA50 再考虑"
     position_cap: float | None = Field(default=None, ge=0.0, le=1.0)  # 仓位上限系数（体制层风险参数，破位 0.3）
+    valuation: ValuationAssessment | None = None  # 系统计算覆盖，不能由 LLM 放行
 
 
 class AnalysisResult(BaseModel):

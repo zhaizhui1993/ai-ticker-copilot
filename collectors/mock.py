@@ -114,8 +114,8 @@ class MockNews:
         stored, db_error = 0, None
         try:
             from storage import repository
-            hashes = [repository.article_hash(e.raw_url, e.title) for e in events]
-            stored = repository.put_current_events(events, hashes)
+            repository.store_raw_articles(articles)
+            stored = repository.complete_news_batch(articles, events)
         except Exception as exc:
             db_error = str(exc)
         return {"fetched": len(articles), "new": len(articles), "filtered": len(filtered),

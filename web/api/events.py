@@ -1,9 +1,11 @@
 """events 路由：当前事件流、增量轮询、经济日历、历史事件库。"""
 
 from datetime import date, datetime, timedelta
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
+from events_lib.calendar import market_today
 
 from config.settings import settings
 
@@ -17,7 +19,7 @@ def _db_unavailable() -> HTTPException | None:
 
 
 @router.get("/api/events")
-def list_events(scope: str | None = None, limit: int = 100) -> dict:
+def list_events(scope: str | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
     try:
         from storage import repository
         events = repository.list_current_events(scope=scope, limit=limit)
@@ -30,9 +32,9 @@ def list_events(scope: str | None = None, limit: int = 100) -> dict:
 def poll_events(since: str | None = None) -> dict:
     try:
         from storage import repository
-        since_date = date.fromisoformat(since) if since else date.today()
+        since_date = date.fromisoformat(since) if since else market_today()
         events = repository.list_current_events(limit=50)
-        fresh = [e for e in events if e.occurred_date >= since_date]
+        fresh = [e for e in events if e.reference_date and e.reference_date >= since_date]
         return {"events": [e.model_dump() for e in fresh], "count": len(fresh)}
     except Exception as exc:
         return {"events": [], "count": 0, "message": str(exc)}
@@ -96,3 +98,44 @@ def lib_put(body: EventIn) -> dict:
         return {"saved": event.event_id}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"保存失败（DB 或字段非法）：{exc}")
+
+
+class StatusChange(BaseModel):
+    status: Literal["active", "resolved", "retracted"]
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class EventMerge(BaseModel):
+    target_event_id: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+def _change(event_id: str, **kwargs) -> dict:
+    from storage import repository
+    try:
+        return {"event": repository.change_event(event_id, **kwargs).model_dump(mode="json")}
+    except KeyError as exc:
+        raise HTTPException(404, "事件不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "事件变更未保存，数据库不可用") from exc
+
+
+@router.patch("/api/events/{event_id}/status")
+def change_status(event_id: str, body: StatusChange) -> dict:
+    return _change(event_id, status=body.status, reason=body.reason)
+
+
+@router.post("/api/events/{event_id}/merge")
+def merge_event(event_id: str, body: EventMerge) -> dict:
+    return _change(event_id, merge_into=body.target_event_id, reason=body.reason)
+
+
+@router.get("/api/events/{event_id}/changes")
+def event_changes(event_id: str) -> dict:
+    from storage import repository
+    try:
+        return {"changes": repository.list_event_changes(event_id)}
+    except Exception as exc:
+        raise HTTPException(503, "事件变更记录读取失败") from exc

@@ -46,10 +46,15 @@ def _signal(ticker="NVDA"):
                         reason="test", position_cap=1)
 
 
+def _valuation_passed():
+    # These tests isolate pre-existing regime rules; valuation coverage has its own suite.
+    return {"valuation": {"status": "passed", "allows_add": True, "reason": "tested separately"}}
+
+
 def test_constraints_reject_outside_tickers_duplicate_and_missing():
     fallback = _result([_signal(), _signal("AMD")])
     raw = _result([_signal(), _signal(), _signal("OUT")])
-    out = enforce(raw, fallback, {"regime_gate": True}, {"NVDA": {}, "AMD": {}})
+    out = enforce(raw, fallback, {"regime_gate": True}, {"NVDA": _valuation_passed(), "AMD": _valuation_passed()})
     assert [s.ticker for s in out.signals] == ["NVDA", "AMD"]
     assert all(s.action == Action.WATCH_ADD and s.position_cap == .3 for s in out.signals)
 
@@ -59,7 +64,7 @@ def test_unknown_data_and_event_window_block_additions():
     for global_ctx, local_ctx in [({"regime_unknown": True}, {}), ({}, {"data_insufficient": True}),
                                   ({}, {"event_window": True, "event_desc": "财报"}),
                                   ({}, {"calendar_unknown": True})]:
-        s = enforce(result, result, global_ctx, {"NVDA": local_ctx}).signals[0]
+        s = enforce(result, result, global_ctx, {"NVDA": {**_valuation_passed(), **local_ctx}}).signals[0]
         assert s.action == Action.WATCH and s.position_cap == 0
 
 
@@ -96,7 +101,7 @@ def test_pipeline_passes_full_basket_and_serializable_audit(monkeypatch):
     monkeypatch.setattr(pipeline, "load_stocks", lambda: [StockConfig(symbol="LITE", segment="optical")])
     monkeypatch.setattr(pipeline, "get_market", MockMarket)
     monkeypatch.setattr(pipeline, "get_macro", MockMacro)
-    monkeypatch.setattr(pipeline, "_recent_current_events", lambda **kw: [])
+    monkeypatch.setattr(pipeline, "_active_current_events", lambda **kw: [])
     monkeypatch.setattr(pipeline.llm, "llm_available", lambda: False)
     result = pipeline.run_analysis(refresh=True)
     audit = result["audit_input"]
@@ -151,7 +156,7 @@ def test_real_llm_path_cannot_bypass_final_policy(monkeypatch):
     from prompts import analysis
     monkeypatch.setattr(analysis, "build_analysis_prompt", lambda ctx: "test")
     context = {"regime_gate": True}
-    data = {"NVDA": {"total": 85, "band": "积极", "scores": {
+    data = {"NVDA": {**_valuation_passed(), "total": 85, "band": "积极", "scores": {
         "macro": 85, "event": 85, "industry": 85, "company": 85}}}
     result = llm.judge(context, data)
     assert len(result.signals) == 1

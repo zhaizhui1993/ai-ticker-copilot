@@ -3,10 +3,10 @@
 run_analysis：取数 → 事件匹配 → 四维评分 → 体制门槛 → LLM 研判 → 落库。
 - 每次重新组装证据，采集缓存独立；每日快照仅用于展示
 - 落库失败降级：DB 不可用时分析照常产出，跳过落库并标注
-- 事件匹配：近 7 天当前事件 → 两级匹配（LLM 可用时精排走真 LLM）
+- 事件匹配：全部活跃当前事件 → 两级匹配（按当前事件类型衰减）
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 import json
 from events_lib.calendar import ET, market_today, event_calendar
 
@@ -22,6 +22,7 @@ from scoring.engine import Engine
 from scoring.event_score import EventScorer
 from scoring.industry_score import IndustryScorer, BASKETS
 from scoring.macro_score import MacroScorer
+from scoring.valuation import assess_valuation
 
 
 class EmptyPoolError(Exception):
@@ -59,12 +60,20 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
         vix=regime.vix if regime else None,
     )
 
-    # ---- 事件匹配（近 7 天当前事件） ----
+    # ---- 事件匹配（全部 active 事件，不按抓取窗口截断） ----
     lib = [e for e in _load_lib() if e.start_date <= today]
     # 分类型新鲜度衰减查表：event_id → 历史事件性质（macro/regulation/…）
     category_by_event = {e.event_id: e.category.value for e in lib}
     lib_by_id = {e.event_id: e for e in lib}   # 状态附加：event_id → 历史事件（含 pre-state）
-    recent_events = _recent_current_events(days=7)
+    event_data_unknown, event_data_note = False, ""
+    try:
+        recent_events = _active_current_events(today=today)
+        if any(e.impact_date is None for e in recent_events):
+            event_data_unknown, event_data_note = True, "存在参考日期未知的活跃事件"
+    except Exception as exc:
+        recent_events = []
+        event_data_unknown, event_data_note = True, "活跃事件读取失败，不能确认风险信息完整"
+        print(f"[pipeline] {event_data_note}：{exc}")
     # 完整相关篮子一次预取，避免把产业分退化为当前股票自身动量。
     symbols = {s.symbol for s in stocks} | {"SPY"}
     for stock in stocks:
@@ -107,13 +116,14 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
         match_inputs = []
         for matches, event in per_event_matches:
             for m in matches[:3]:
-                if (today - event.occurred_date).days >= 0:
-                    m2 = m.model_copy(update={"current_event_id": event.event_id})          # 匹配对象跨标的共享，状态按标的附加到副本
+                if event.impact_date and (today - event.impact_date).days >= 0:
+                    m2 = m.model_copy(update={"current_event_id": event.event_id,
+                                              "current_category": event.category})
                     hist = lib_by_id.get(m.event_id)
                     if hist is not None:
                         from events_lib.pre_state import attach_pre_state
                         attach_pre_state(m2, hist, stock.symbol)
-                    match_inputs.append((m2, (today - event.occurred_date).days))
+                    match_inputs.append((m2, (today - event.impact_date).days))
 
         current_state = None
         if len(bars) >= 60:
@@ -155,17 +165,21 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
         if case_evidence:
             analogy_note = json.dumps(case_evidence, ensure_ascii=False)
         calendar = calendar_by_symbol[stock.symbol]
+        valuation = assess_valuation(stock.valuation, bars, today)
         data_insufficient = (not company_score.indicators.get("fundamentals_ready") or not bars
                              or (today - bars[-1].date).days > 5
                              or (fin is not None and fin.period_end is not None
                                  and (today - fin.period_end).days > 550))
-        if data_insufficient or regime is None or calendar["unknown"] or calendar["events"]:
+        if (data_insufficient or regime is None or event_data_unknown or calendar["unknown"]
+                or calendar["events"] or not valuation.allows_add):
             if output.band in ("积极", "中性偏多"):
                 output.band = "中性偏空"
             output.position_cap = 0.0
             output.regime_note += "；证据不足或事件窗口：限制新增风险"
         degraded = [d for d in (macro_score, event_score, industry_score, company_score) if d.degraded]
         degraded_note = "；".join(d.degraded_note for d in degraded) if degraded else ""
+        if event_data_note:
+            degraded_note = "；".join(filter(None, [degraded_note, event_data_note]))
 
         ticker_ctx[stock.symbol] = {
             "total": output.weighted_total, "band": output.band,
@@ -176,6 +190,7 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
             "position": stock.position.value, "segment": stock.segment.value,
             "position_cap": output.position_cap,
             "company_gate": output.company_gate_applied,
+            "valuation": valuation.model_dump(mode="json"),
             "data_insufficient": data_insufficient,
             "calendar_unknown": calendar["unknown"],
             "event_window": bool(calendar["events"]),
@@ -186,10 +201,12 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
     # ---- LLM 研判 ----
     ctx = _build_ctx(today, regime, macro_score, stocks, per_ticker_blocks)
     ctx["regime_unknown"] = regime is None
+    ctx["event_data_unknown"] = event_data_unknown
+    ctx["event_data_note"] = event_data_note
     result = llm.judge(ctx, ticker_ctx)
     result.generated_at = generated_at
     audit_input = {
-        "version": "1.4", "generated_at": generated_at, "weights": weights,
+        "version": "1.5", "generated_at": generated_at, "weights": weights,
         "stocks": [s.model_dump(mode="json") for s in stocks],
         "bars": {s: [b.model_dump(mode="json") for b in bars] for s, bars in bars_by_symbol.items()},
         "financials": {s: f.model_dump(mode="json") for s, f in financials.items()},
@@ -220,20 +237,22 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
                     confidence=signal.confidence if signal else None,
                     scores=four_by_symbol.get(stock.symbol),
                     analysis={  # 回测与同日回放所需字段（P0-3）
-                        "signals": result.model_dump()["signals"],
+                        "signals": result.model_dump(mode="json")["signals"],
                         "market_summary": result.market_summary,
                         "regime_gate": output.regime_gate_applied,
                         "company_gate": output.company_gate_applied,
                         "position_cap": output.position_cap,
                         "band": output.band,
-                        "version": "1.4", "generated_at": generated_at,
+                        "valuation": ticker_ctx[stock.symbol]["valuation"],
+                        "event_data_unknown": event_data_unknown,
+                        "version": "1.5", "generated_at": generated_at,
                         "source": ctx.get("result_source", "unknown"),
                         "price_date": str(bars_by_symbol[stock.symbol][-1].date) if bars_by_symbol.get(stock.symbol) else None,
                     },
                 ))
             repository.append_analysis_run(
                 audit_input,
-                result.model_dump(),
+                result.model_dump(mode="json"),
             )
             db_saved = True
         except Exception as exc:
@@ -266,13 +285,9 @@ def _load_lib():
     return events
 
 
-def _recent_current_events(days: int = 7) -> list:
-    try:
-        from storage import repository
-        return [e for e in repository.list_current_events(limit=1000)
-                if market_today() - timedelta(days=days) <= e.occurred_date <= market_today()]
-    except Exception:
-        return []
+def _active_current_events(today: date) -> list:
+    from storage import repository
+    return repository.list_active_current_events(as_of=today)
 
 
 def _format_ticker_block(stock, four, output, analogy_note, degraded_note, policy=None, weights=None) -> str:
@@ -291,6 +306,7 @@ def _format_ticker_block(stock, four, output, analogy_note, degraded_note, polic
         rationales="\n  ".join(f"{d.rationale}" for d in
                                (four.macro, four.event, four.industry, four.company)),
         indicators=str(indicators),
+        valuation=json.dumps(policy.get("valuation"), ensure_ascii=False),
         analogy=analogy_note or "无命中",
         event_window=policy.get("event_window", False), event_desc=policy.get("event_desc", ""),
         x_summary="X 情绪尚未接入评分",

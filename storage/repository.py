@@ -7,20 +7,17 @@
 - 调用方不手写 SQL、不管理连接
 """
 
-import hashlib
 import json
 from datetime import date, datetime, timezone
 
 from pydantic import BaseModel
+from pymysql.err import IntegrityError
 
-from domain.events import HistoricalEvent, SentimentLabel, XPost
+from domain.events import CurrentEvent, HistoricalEvent, RawArticle, SentimentLabel, XPost
 from domain.scoring import FourDimScores
+from events_lib.identity import article_hash
 from storage.db import get_conn
 
-
-def article_hash(raw_url: str, title: str) -> str:
-    """文章去重键：sha256(raw_url + | + title)。"""
-    return hashlib.sha256(f"{raw_url}|{title}".encode()).hexdigest()
 
 # 时间戳统一存 UTC（docs/03-collectors/scheduler.md 时区约定）
 
@@ -221,31 +218,101 @@ def try_crawl_lock(state_key: str) -> bool:
 # ---------- 当前事件（新闻管道产物） ----------
 
 
-def put_current_events(events: list, title_hashes: list[str] | None = None) -> int:
-    """当前事件批量入库（event_id 主键 + title_hash 唯一键双去重），返回新增条数。
-
-    title_hashes 与 events 等长对位（调用方在 news 管道生成）。
-    """
-    from domain.events import CurrentEvent  # 局部导入避免循环
-
-    if not events:
-        return 0
-    hashes = title_hashes or [article_hash(e.raw_url, e.title) for e in events]
-    data = [
-        (e.event_id, e.model_dump_json(), h, e.raw_url[:512] or None,
-         _utcnow(), e.occurred_date, e.scope.value)
-        for e, h in zip(events, hashes)
-    ]
-    with get_conn() as conn, conn.cursor() as cursor:
-        cursor.executemany(
-            """
-            INSERT IGNORE INTO current_events
-              (event_id, payload_json, title_hash, raw_url, fetched_at, occurred_date, scope)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            data,
+def _insert_current_event(cursor, event: CurrentEvent, identity: str) -> int:
+    try:
+        cursor.execute(
+            "INSERT INTO current_events "
+            "(event_id, payload_json, title_hash, raw_url, fetched_at, occurred_date, scope) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (event.event_id, event.model_dump_json(), identity, event.raw_url[:512] or None,
+             _utc_naive(event.fetched_at), event.occurred_date, event.scope.value),
         )
-        return cursor.rowcount
+        return 1
+    except IntegrityError as exc:
+        if exc.args[0] != 1062:
+            raise
+        cursor.execute("SELECT event_id, title_hash FROM current_events "
+                       "WHERE event_id=%s OR title_hash=%s", (event.event_id, identity))
+        rows = cursor.fetchall()
+        if not rows or any(r["title_hash"] != identity for r in rows):
+            raise ValueError(f"事件 ID 冲突，拒绝丢弃报道：{event.event_id}") from exc
+        return 0  # Only an identical original report is an idempotent duplicate.
+
+
+def _utc_naive(timestamp: datetime | None) -> datetime:
+    timestamp = timestamp or datetime.now(timezone.utc)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def put_current_events(events: list[CurrentEvent], title_hashes: list[str] | None = None) -> int:
+    """Atomic batch; preserve legacy IDs but reject collisions between different reports."""
+    hashes = title_hashes if title_hashes is not None else [
+        e.article_id or article_hash(e.raw_url, e.title) for e in events]
+    if len(hashes) != len(events):
+        raise ValueError("事件与原文 hash 数量不一致")
+    if any(e.article_id and e.article_id != h for e, h in zip(events, hashes)):
+        raise ValueError("事件去重键必须使用原文身份")
+    with get_conn() as conn, conn.cursor() as cursor:
+        conn.begin()
+        try:
+            count = sum(_insert_current_event(cursor, e, h) for e, h in zip(events, hashes))
+            conn.commit()
+            return count
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def store_raw_articles(articles: list[RawArticle]) -> int:
+    """Persist original text and first fetch time before extraction; never overwrite on retry."""
+    count = 0
+    with get_conn() as conn, conn.cursor() as cursor:
+        for article in articles:
+            identity = article_hash(article.raw_url, article.title)
+            try:
+                cursor.execute("INSERT INTO raw_news_articles (article_id, payload_json, fetched_at) "
+                               "VALUES (%s, %s, %s)",
+                               (identity, article.model_dump_json(), _utc_naive(article.fetched_at)))
+                count += 1
+            except IntegrityError as exc:
+                if exc.args[0] != 1062:
+                    raise
+    return count
+
+
+def pending_raw_articles(limit: int = 100) -> list[RawArticle]:
+    with get_conn() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT payload_json FROM raw_news_articles WHERE processed_at IS NULL "
+                       "ORDER BY fetched_at, article_id LIMIT %s", (limit,))
+        return [RawArticle.model_validate_json(r["payload_json"]) for r in cursor.fetchall()]
+
+
+def complete_news_batch(articles: list[RawArticle], events: list[CurrentEvent]) -> int:
+    """Commit extraction and processed state together; rollback leaves reports retryable."""
+    identities = sorted({article_hash(a.raw_url, a.title) for a in articles})
+    if any(e.article_id not in identities for e in events):
+        raise ValueError("事件没有对应的原始报道")
+    if not identities:
+        return 0
+    with get_conn() as conn, conn.cursor() as cursor:
+        conn.begin()
+        try:
+            # Lock in stable order so overlapping polls cannot resurrect manual lifecycle changes.
+            for identity in identities:
+                cursor.execute("SELECT article_id FROM raw_news_articles WHERE article_id=%s FOR UPDATE",
+                               (identity,))
+                if cursor.fetchone() is None:
+                    raise ValueError("原始报道尚未入库")
+            count = sum(_insert_current_event(cursor, e, e.article_id) for e in events)
+            cursor.executemany("UPDATE raw_news_articles SET processed_at=COALESCE(processed_at, %s) "
+                               "WHERE article_id=%s", [(_utcnow(), h) for h in identities])
+            conn.commit()
+            return count
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def has_title_hashes(hashes: list[str]) -> set[str]:
@@ -261,24 +328,99 @@ def has_title_hashes(hashes: list[str]) -> set[str]:
         return {r["title_hash"] for r in cursor.fetchall()}
 
 
-def list_current_events(since_date=None, scope: str | None = None, limit: int = 100) -> list:
+def list_current_events(since_date=None, scope: str | None = None, limit: int | None = 100) -> list:
     """当前事件列表（事件中心/API 用；按抓取时间倒序）。"""
     from domain.events import CurrentEvent  # 局部导入避免循环
 
     query = "SELECT payload_json FROM current_events WHERE 1=1"
     params: list = []
-    if since_date is not None:
-        query += " AND occurred_date >= %s"
-        params.append(since_date)
     if scope:
         query += " AND scope = %s"
         params.append(scope)
-    query += " ORDER BY fetched_at DESC LIMIT %s"
-    params.append(limit)
+    query += " ORDER BY fetched_at DESC, event_id"
+    if limit is not None and since_date is None:
+        query += " LIMIT %s"
+        params.append(limit)
     with get_conn() as conn, conn.cursor() as cursor:
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
-    return [CurrentEvent.model_validate_json(r["payload_json"]) for r in rows]
+    events = [CurrentEvent.model_validate_json(r["payload_json"]) for r in rows]
+    if since_date is not None:
+        events = [e for e in events if e.reference_date and e.reference_date >= since_date]
+    return events[:limit] if limit is not None else events
+
+
+def list_active_current_events(as_of: date) -> list[CurrentEvent]:
+    """No seven-day cutoff: unresolved policy influence can span months."""
+    return [e for e in list_current_events(limit=None)
+            if e.status == "active" and (e.reference_date is None or e.reference_date <= as_of)]
+
+
+def _save_event_change(cursor, before: CurrentEvent, after: CurrentEvent, reason: str):
+    cursor.execute("UPDATE current_events SET payload_json=%s WHERE event_id=%s",
+                   (after.model_dump_json(), after.event_id))
+    cursor.execute("INSERT INTO event_changes (event_id, before_json, after_json, reason, changed_at) "
+                   "VALUES (%s, %s, %s, %s, %s)",
+                   (after.event_id, before.model_dump_json(), after.model_dump_json(), reason, _utcnow()))
+
+
+def change_event(event_id: str, *, reason: str, status: str | None = None,
+                 merge_into: str | None = None) -> CurrentEvent:
+    """Manual lifecycle change or merge, with locked before/after audit in one transaction."""
+    if not reason.strip() or bool(status) == bool(merge_into):
+        raise ValueError("需提供变更理由，以及状态或合并目标之一")
+    if status and status not in {"active", "resolved", "retracted"}:
+        raise ValueError("非法事件状态")
+    if merge_into == event_id:
+        raise ValueError("不能合并到自身")
+    with get_conn() as conn, conn.cursor() as cursor:
+        conn.begin()
+        try:
+            found = {}
+            for key in sorted({event_id, merge_into} - {None}):
+                cursor.execute("SELECT payload_json FROM current_events WHERE event_id=%s FOR UPDATE", (key,))
+                row = cursor.fetchone()
+                if row is None:
+                    raise KeyError(key)
+                found[key] = CurrentEvent.model_validate_json(row["payload_json"])
+            original = found[event_id]
+            if original.status == "merged":
+                raise ValueError("已合并的事件不可再次变更；请操作目标事件")
+            updated = original.model_copy(deep=True)
+            if merge_into:
+                target = found[merge_into]
+                if target.status == "merged":
+                    raise ValueError("合并目标不能是已合并事件")
+                merged = target.model_copy(deep=True)
+                refs = target.evidence + original.evidence
+                # Legacy events have no article ledger: preserve their known provenance too.
+                for e in (target, original):
+                    if not e.evidence:
+                        refs.append(RawArticle(source=e.source, raw_url=e.raw_url, title=e.title,
+                                               summary=e.summary, published_at=e.published_at,
+                                               fetched_at=e.fetched_at))
+                merged.evidence = list({article_hash(a.raw_url, a.title): a for a in refs}.values())
+                dates = [e.impact_date for e in (target, original) if e.impact_date]
+                merged.influence_start_date = min(dates) if dates else None
+                merged.tickers_mentioned = sorted(set(target.tickers_mentioned + original.tickers_mentioned))
+                _save_event_change(cursor, target, merged, reason)
+                updated.status, updated.merged_into = "merged", merge_into
+            else:
+                updated.status = status
+            _save_event_change(cursor, original, updated, reason)
+            conn.commit()
+            return updated
+        except Exception:
+            conn.rollback()
+            raise
+
+
+def list_event_changes(event_id: str) -> list[dict]:
+    with get_conn() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT change_id, before_json, after_json, reason, changed_at "
+                       "FROM event_changes WHERE event_id=%s ORDER BY change_id", (event_id,))
+        return [{**r, "before_json": json.loads(r["before_json"]),
+                 "after_json": json.loads(r["after_json"])} for r in cursor.fetchall()]
 
 
 # ---------- 分析日志 ----------

@@ -8,6 +8,7 @@ from datetime import date, datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
+from domain.valuation import ValuationEvidence
 
 
 class Segment(str, Enum):
@@ -39,6 +40,7 @@ class StockConfig(BaseModel):
     segment: Segment = Segment.OTHER
     position: Position = Position.WATCHLIST
     cost_basis: float | None = None  # 持仓成本 USD（可选，仅展示盈亏）
+    valuation: ValuationEvidence | None = None
 
 
 class InfluencerConfig(BaseModel):

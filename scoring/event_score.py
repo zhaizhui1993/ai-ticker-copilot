@@ -19,7 +19,7 @@ from domain.events import EventMatchResult
 from domain.scoring import ScoreBreakdown
 
 HALF_LIFE_DAYS = 7.0                       # 默认（企业类/未分类事件）
-HALF_LIFE_BY_CATEGORY = {                  # 按历史事件性质（category）分类型半衰期
+HALF_LIFE_BY_CATEGORY = {                  # 按当前事件性质分类型半衰期；旧调用回退历史类型
     "macro": 30.0,                         # 宏观政策/贸易摩擦
     "monetary": 30.0,                      # 货币政策
     "regulation": 45.0,                    # 监管/出口管制
@@ -85,7 +85,7 @@ class EventScorer:
         state_factors = []
         for match, days_ago in matches:
             half_life = HALF_LIFE_BY_CATEGORY.get(
-                category_by_event.get(match.event_id, ""), HALF_LIFE_DAYS)
+                match.current_category or category_by_event.get(match.event_id, ""), HALF_LIFE_DAYS)
             half_lives_used.add(half_life)
             freshness = 0.5 ** (days_ago / half_life)
             listed = ticker.upper() in {t.upper() for t in match.affected_tickers}

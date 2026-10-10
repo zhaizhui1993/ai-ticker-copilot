@@ -15,6 +15,8 @@ from domain.signal import Action, AnalysisResult, TickerSignal
 from config.settings import settings
 
 from analyzer.rule_extract import extract_events as extract_events_rule  # noqa: F401（降级路径）
+from events_lib.identity import event_provenance
+from events_lib.calendar import ET, market_today
 
 DEGRADE_NOTE = "LLM 降级（未经 LLM 研判，按分档直出）"
 
@@ -52,22 +54,36 @@ def extract_events(
 
         structured = _chat().with_structured_output(EventBatch, method="function_calling")
         batch: EventBatch = structured.invoke(_build_extract_prompt(articles, pool_tickers))
-        today = today or date.today()
-        return [
-            CurrentEvent(
-                event_id=f"{today:%Y-%m-%d}-{seq_start + i:03d}",
+        events, seen = [], set()
+        for e in batch.events:
+            if e.article_index > len(articles) or e.article_index in seen:
+                raise ValueError("抽取文章编号不存在或重复")
+            seen.add(e.article_index)
+            article = articles[e.article_index - 1]
+            quote = e.occurred_date_quote.strip()
+            # Unknown dates remain unknown; accept only a verbatim date-bearing source quote.
+            known_date = (e.occurred_date if e.occurred_date and quote
+                          and str(e.occurred_date) in quote
+                          and quote in f"{article.title}\n{article.summary}" else None)
+            cutoffs = [today or market_today()] + [t.astimezone(ET).date()
+                       for t in (article.published_at, article.fetched_at) if t]
+            if known_date and known_date > min(cutoffs):
+                known_date = None  # A scheduled future date is not an actual occurrence.
+            events.append(CurrentEvent(
+                **event_provenance(article),
                 title=e.title[:200],
-                occurred_date=today,
+                occurred_date=known_date,
+                occurred_date_quote=quote if known_date else "",
                 scope=e.scope,
                 category=e.category,
                 summary=(e.summary or e.title)[:300],
                 keywords=e.keywords or [],
                 tickers_mentioned=[t for t in e.tickers_mentioned if t in pool_tickers] or [],
-                source=articles[0].source if articles else "llm",
-                raw_url=e.raw_url or "",
-            )
-            for i, e in enumerate(batch.events)
-        ]
+            ))
+        # Omitted but rule-relevant reports must not be silently marked processed.
+        omitted = [a for i, a in enumerate(articles, 1) if i not in seen]
+        events.extend(extract_events_rule(omitted, pool_tickers, seq_start, today))
+        return list({e.article_id: e for e in events}.values())
     except Exception as exc:
         print(f"[llm] 事件抽取降级为规则版：{exc}")
         return extract_events_rule(articles, pool_tickers, seq_start, today)
@@ -78,9 +94,13 @@ def _build_extract_prompt(articles: list[RawArticle], pool_tickers: list[str]) -
         f"从以下新闻中抽取属于四类事件（macro_policy 宏观政策 / geopolitical 国际热点 / "
         f"industry 行业 / company 企业）的结构化事件。股票池：{','.join(pool_tickers) or '（空）'}。"
         "宁缺勿滥，无关的跳过；category 从 macro/monetary/regulation/tech/crisis 中选。"
+        "每篇最多一个主要事件，article_index 必须引用输入编号，不合并不同文章。"
+        "occurred_date 仅在原文明确说明实际发生日且含 YYYY-MM-DD 时填写，"
+        "同时以 occurred_date_quote 逐字引用日期及其上下文；否则日期为 null。"
+        "不能把发表日或抓取日当成发生日。"
     ]
     for i, a in enumerate(articles, start=1):
-        lines.append(f"[{i}] {a.title}｜{a.summary[:150]}｜{a.source}｜{a.raw_url}")
+        lines.append(f"[{i}] {a.title}\n{a.summary[:500]}\n来源 {a.source}｜{a.raw_url}｜发布 {a.published_at}")
     return "\n".join(lines)
 
 
@@ -168,9 +188,11 @@ def rule_judge(ctx: dict, ticker_ctx: dict) -> AnalysisResult:
             price_target_hint=None,
             position_cap=position_cap if gate else None,
         ))
-    return AnalysisResult(
+    result = AnalysisResult(
         generated_at=ctx.get("date", ""),
         signals=signals,
         market_summary=ctx.get("macro_summary", ""),
         disclaimer="本报告仅供个人研究参考，不构成投资建议。",
     )
+    from analyzer.constraints import enforce
+    return enforce(result, result, ctx, ticker_ctx)

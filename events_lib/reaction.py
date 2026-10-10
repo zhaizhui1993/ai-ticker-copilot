@@ -8,7 +8,7 @@
 - drawdown_52w：事件时点距 52 周高点回撤
 - volume_ratio：事件日量比（vs 前 20 日均量）
 
-所有计算以 occurred_date 截断日线（纯函数 compute_reaction 可独立测试）。
+计算以事件参考日截断日线；发生日未知时明确标注时间代理，不作事件反应归因。
 行情失败按降级协议：该 ticker 反应缺省，不影响事件入库。
 """
 
@@ -61,13 +61,17 @@ def enrich_events(events: list[CurrentEvent], market) -> list[CurrentEvent]:
     """
     bars_cache: dict[str, list[DailyBar]] = {}
     for event in events:
+        if event.reference_date is None:
+            continue
         reactions: list[PriceReaction] = []
         for ticker in [t for t in event.tickers_mentioned if t][:MAX_TICKERS_PER_EVENT]:
             try:
                 if ticker not in bars_cache:
                     bars_cache[ticker] = market.get_daily_bars(ticker, 300)
-                reaction = compute_reaction(ticker, bars_cache[ticker], event.occurred_date)
+                reaction = compute_reaction(ticker, bars_cache[ticker], event.reference_date)
                 if reaction:
+                    if event.occurred_date is None:
+                        reaction.note = f"发生日未知，按{event.date_basis}参考日展示行情背景；" + reaction.note
                     reactions.append(reaction)
             except Exception as exc:
                 print(f"[reaction] {ticker} 行情获取失败（反应缺省）：{exc}")

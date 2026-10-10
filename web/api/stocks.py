@@ -5,16 +5,14 @@ from pydantic import BaseModel
 
 from config.loader import ConfigError, load_stocks
 from domain import technicals
+from domain.stock import StockConfig
 from collectors import get_market
 
 router = APIRouter()
 
 
-class StockIn(BaseModel):
-    symbol: str
-    segment: str = "other"
-    position: str = "watchlist"
-    cost_basis: float | None = None
+class StockIn(StockConfig):
+    pass
 
 
 class PoolIn(BaseModel):
@@ -31,10 +29,18 @@ def put_pool(body: PoolIn) -> dict:
     import yaml
     from config.loader import CONFIG_DIR
 
-    data = {"stocks": [s.model_dump() for s in body.stocks]}
     target = CONFIG_DIR / "stocks.yaml"
     try:
-        load_stocks.__wrapped__ if False else None
+        existing = {s.symbol: s for s in load_stocks()}
+        rows = []
+        for stock in body.stocks:
+            row = stock.model_dump(mode="json")
+            # Older clients do not submit valuation; explicit null is required to clear it.
+            if "valuation" not in stock.model_fields_set and stock.symbol in existing:
+                prior = existing[stock.symbol].valuation
+                row["valuation"] = prior.model_dump(mode="json") if prior else None
+            rows.append(row)
+        data = {"stocks": rows}
         target.write_text(
             yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
         saved = load_stocks(target)  # 写后重读校验（非法 symbol 在此抛出）

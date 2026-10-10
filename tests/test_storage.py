@@ -81,7 +81,7 @@ def test_snapshot_upsert_same_day_overwrites(database) -> None:
 
 def test_seed_events_load_and_upsert(database) -> None:
     events = load_seed_events()
-    assert len(events) == 31                                  # 种子清单 31 条（v1.2 扩充批次后）
+    assert len(events) >= 43                                  # 保留既有案例；允许未来扩充
     assert any(e.event_id == "2026-07-ai-valuation-pullback" for e in events)
     positive = sum(1 for e in events
                    if any(t.direction > 0 for t in e.tickers_affected))
@@ -92,7 +92,7 @@ def test_seed_events_load_and_upsert(database) -> None:
     assert count == upsert_seed_events()                      # 幂等：重复入库不增不减
 
     stored = repository.list_events(source="seed")
-    assert len(stored) == 10
+    assert len(stored) == len(events)
     sox = next(e for e in stored if e.event_id == "2026-07-ai-valuation-pullback")
     assert sox.market.vix_peak == 20.7                        # 实测数据往返无损
 
@@ -144,3 +144,38 @@ def test_crawl_lock_once_per_day(database) -> None:
 def test_analysis_run_append_only(database) -> None:
     run_id = repository.append_analysis_run({"input": 1}, {"result": 2})
     assert run_id >= 1                                        # 只追加，返回自增 id
+
+
+def test_schema_upgrade_is_repeatable(database):
+    db.init_schema(database=database)
+    db.init_schema(database=database)
+
+
+def test_native_news_transaction_retry_lifecycle_and_audit(database, monkeypatch):
+    from analyzer.rule_extract import extract_events
+    from domain.events import RawArticle
+    articles = [RawArticle(source="DB test", raw_url=f"https://example.com/db-{ticker}",
+                           title=f"{ticker} earnings", published_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
+                for ticker in ("NVDA", "AMD")]
+    events = extract_events(articles, ["NVDA", "AMD"])
+    repository.store_raw_articles(articles)
+    insert = repository._insert_current_event
+
+    def fail_second(cursor, event, identity):
+        if event.event_id == events[1].event_id:
+            raise RuntimeError("simulated second-write failure")
+        return insert(cursor, event, identity)
+    monkeypatch.setattr(repository, "_insert_current_event", fail_second)
+    with pytest.raises(RuntimeError):
+        repository.complete_news_batch(articles, events)
+    stored_ids = {e.event_id for e in repository.list_current_events(limit=None)}
+    assert not stored_ids.intersection(e.event_id for e in events)
+    assert {a.raw_url for a in repository.pending_raw_articles()} >= {a.raw_url for a in articles}
+
+    monkeypatch.setattr(repository, "_insert_current_event", insert)
+    assert repository.complete_news_batch(articles, events) == 2
+    assert repository.complete_news_batch(articles, events) == 0
+    repository.change_event(events[0].event_id, merge_into=events[1].event_id, reason="native merge test")
+    active = {e.event_id for e in repository.list_active_current_events(date(2026, 10, 1))}
+    assert events[0].event_id not in active and events[1].event_id in active
+    assert repository.list_event_changes(events[0].event_id)[0]["after_json"]["status"] == "merged"

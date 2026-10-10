@@ -10,6 +10,10 @@ from collectors import get_market
 from config.loader import EMPTY_POOL_MESSAGE, load_stocks
 from config.settings import settings
 from collectors.x_crawler import state_path
+from domain.stock import DailyBar
+from domain.valuation import ValuationAssessment
+from events_lib.calendar import market_today
+from scoring.valuation import assess_valuation
 
 router = APIRouter()
 
@@ -24,6 +28,8 @@ class StockCard(BaseModel):
     signal: str | None = None
     total: float | None = None
     scores: dict | None = None
+    valuation: ValuationAssessment | None = None
+    signal_note: str = ""
 
 
 @router.get("/api/dashboard")
@@ -45,6 +51,8 @@ def dashboard(refresh: bool = False) -> dict:
                 snapshot_by_symbol[stock.symbol] = {
                     "close": last.close, "signal": last.signal,
                     "scores": None, "total": None,
+                    "date": last.snapshot_date,
+                    "version": (last.analysis or {}).get("version"),
                 }
     except Exception:
         pass
@@ -60,12 +68,21 @@ def dashboard(refresh: bool = False) -> dict:
             except Exception:
                 pass
         snap = snapshot_by_symbol.get(stock.symbol, {})
+        bars = [DailyBar(date=snap["date"], open=snap["close"], high=snap["close"],
+                         low=snap["close"], close=snap["close"])] if snap.get("close") else []
+        valuation = assess_valuation(stock.valuation, bars, market_today())
+        signal, signal_note = snap.get("signal"), ""
+        if signal in {"accumulate", "watch_add"}:
+            if snap.get("version") != "1.5":
+                signal, signal_note = "watch", "旧版信号缺少当前准入检查，请重新分析"
+            elif not valuation.allows_add:
+                signal, signal_note = "watch", valuation.reason
         cards.append(StockCard(
             symbol=stock.symbol, segment=stock.segment.value,
             position=stock.position.value, cost_basis=stock.cost_basis,
             price=price if price is not None else snap.get("close"),
             change_pct=change,
-            signal=snap.get("signal"),
+            signal=signal, valuation=valuation, signal_note=signal_note,
         ).model_dump())
 
     regime = None

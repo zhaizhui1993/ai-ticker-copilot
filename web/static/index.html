@@ -88,6 +88,7 @@
                     {{ c.change_pct!=null ? (c.change_pct>=0?'+':'')+c.change_pct.toFixed(2)+'%' : '' }}</span></div>
               <span v-if="c.signal" class="sig" :class="c.signal">{{ signalLabel(c.signal) }}</span>
               <span v-else class="muted">今日未分析</span>
+              <div class="warn" v-if="c.signal_note">{{ c.signal_note }}</div>
               <div class="muted">{{ c.position === 'holding' ? '持仓' + (c.cost_basis ? ' @'+c.cost_basis : '') : '关注' }}</div>
             </div>
           </div>
@@ -159,7 +160,7 @@
         <div v-if="events.length">
           <div class="event" v-for="e in events" :key="e.event_id">
             <b>{{ e.title }}</b>
-            <div class="meta">{{ e.occurred_date }} ｜ {{ scopeLabel(e.scope) }} / {{ e.category }} ｜ {{ e.source }}
+            <div class="meta">{{ e.reference_date || e.occurred_date || '日期未知' }}（{{ {occurred:'发生日', published:'发布日期', fetched:'采集日期', unknown:'未知'}[e.date_basis || 'occurred'] }}） ｜ {{ scopeLabel(e.scope) }} / {{ e.category }} ｜ {{ e.source }} ｜ {{ {active:'活跃', resolved:'已结束', retracted:'已撤回', merged:'已合并'}[e.status || 'active'] }}
               <span v-if="e.tickers_mentioned.length">｜ 涉及 {{ e.tickers_mentioned.join(', ') }}</span></div>
             <div class="muted">{{ e.summary }}</div>
             <div v-if="e.price_reactions && e.price_reactions.length" style="margin-top:4px">
@@ -167,6 +168,7 @@
                     :style="{color: (r.event_day_pct||0) >= 0 ? '#c62828' : '#2e7d32', marginRight:'12px'}">
                 {{ r.ticker }} {{ r.event_day_pct != null ? ((r.event_day_pct>=0?'+':'')+r.event_day_pct+'%') : '-' }}
                 <span class="muted">前5日 {{ r.prior_5d_pct != null ? r.prior_5d_pct+'%' : '-' }}｜距52周高 {{ r.drawdown_52w != null ? r.drawdown_52w+'%' : '-' }}</span>
+                <span class="muted" v-if="r.note">（{{ r.note }}）</span>
               </span>
             </div>
           </div>
@@ -223,6 +225,7 @@
           <b>{{ s.ticker }}</b> <span class="sig" :class="s.action">{{ signalLabel(s.action) }}</span>
           <span class="muted">置信度 {{ (s.confidence*100).toFixed(0) }}%</span>
           <p style="margin:6px 0">{{ s.reason }}</p>
+          <div class="muted" v-if="s.valuation">估值准入：{{ s.valuation.reason }}<span v-if="s.valuation.price_date">（价格日期 {{ s.valuation.price_date }}）</span></div>
           <div class="warn" v-for="r in s.risks" :key="r">风险：{{ r }}</div>
           <div class="muted" v-if="s.price_target_hint">提示：{{ s.price_target_hint }}</div>
         </div>
