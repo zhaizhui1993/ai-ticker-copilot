@@ -8,6 +8,7 @@ run_analysis：取数 → 事件匹配 → 四维评分 → 体制门槛 → LLM
 
 from datetime import date, datetime
 import json
+from typing import Literal
 from events_lib.calendar import ET, market_today, event_calendar
 
 from analyzer import llm
@@ -15,6 +16,8 @@ from collectors import get_macro, get_market
 from config.loader import EMPTY_POOL_MESSAGE, load_scoring_weights, load_stocks
 from config.settings import settings
 from domain.scoring import FourDimScores
+from domain.asof import analysis_clock, completed_bars
+from events_lib.exposure import exposure_for
 from events_lib import matcher
 from events_lib.loader import load_seed_events
 from scoring.company_score import CompanyScorer
@@ -30,7 +33,8 @@ class EmptyPoolError(Exception):
         super().__init__(EMPTY_POOL_MESSAGE)
 
 
-def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dict:
+def run_analysis(refresh: bool = False, tickers: list[str] | None = None,
+                 mode: Literal["eod", "intraday_observe"] = "eod") -> dict:
     """返回 {result: AnalysisResult, outputs: {ticker: EngineOutput}, regime, db_saved: bool}。"""
     stocks = load_stocks()
     if not stocks:
@@ -39,13 +43,14 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
         stocks = [s for s in stocks if s.symbol in tickers] or stocks
 
     market = get_market()
-    today = market_today()
+    clock = analysis_clock(mode)
+    today = clock.decision_at.astimezone(ET).date()
     generated_at = datetime.now(ET).isoformat()
 
     # ---- 取数（各自降级） ----
     regime = None
     try:
-        regime = market.get_index_regime()
+        regime = market.get_index_regime(clock.price_session_limit)
     except Exception as exc:
         print(f"[pipeline] 指数体制层获取失败（限制新增风险并标注）：{exc}")
 
@@ -81,7 +86,7 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
     bars_by_symbol, financials = {}, {}
     for symbol in sorted(symbols):
         try:
-            bars_by_symbol[symbol] = market.get_daily_bars(symbol, 300)
+            bars_by_symbol[symbol] = completed_bars(market.get_daily_bars(symbol, 300), clock)
         except Exception:
             bars_by_symbol[symbol] = []
         if symbol != "SPY":
@@ -114,7 +119,12 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
         bars = bars_by_symbol.get(stock.symbol, [])
         fin = financials.get(stock.symbol)
         match_inputs = []
+        event_exposures = []
         for matches, event in per_event_matches:
+            exposure = exposure_for(event, stock.symbol, stock.segment.value)
+            if exposure is None:
+                continue
+            event_exposures.append(exposure.model_dump(mode="json"))
             for m in matches[:3]:
                 if event.impact_date and (today - event.impact_date).days >= 0:
                     m2 = m.model_copy(update={"current_event_id": event.event_id,
@@ -170,7 +180,14 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
                              or (today - bars[-1].date).days > 5
                              or (fin is not None and fin.period_end is not None
                                  and (today - fin.period_end).days > 550))
+        regime_dates = {i.as_of for i in regime.indexes if i.as_of is not None} if regime else set()
+        if regime and regime.vix_as_of is not None:
+            regime_dates.add(regime.vix_as_of)
+        market_mismatch = bool(bars and regime_dates and regime_dates != {bars[-1].date})
+        if market_mismatch:
+            data_insufficient = True
         if (data_insufficient or regime is None or event_data_unknown or calendar["unknown"]
+                or clock.mode == "intraday_observe"
                 or calendar["events"] or not valuation.allows_add):
             if output.band in ("积极", "中性偏多"):
                 output.band = "中性偏空"
@@ -186,12 +203,15 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
             "scores": {"macro": four.macro.score, "event": four.event.score,
                        "industry": four.industry.score, "company": four.company.score},
             "analogy_note": analogy_note,
+            "event_exposures": event_exposures,
             "degraded_note": degraded_note,
             "position": stock.position.value, "segment": stock.segment.value,
             "position_cap": output.position_cap,
             "company_gate": output.company_gate_applied,
             "valuation": valuation.model_dump(mode="json"),
             "data_insufficient": data_insufficient,
+            "observation_only": clock.mode == "intraday_observe",
+            "market_mismatch": market_mismatch,
             "calendar_unknown": calendar["unknown"],
             "event_window": bool(calendar["events"]),
             "event_desc": "、".join(e["name"] for e in calendar["events"]),
@@ -206,7 +226,8 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
     result = llm.judge(ctx, ticker_ctx)
     result.generated_at = generated_at
     audit_input = {
-        "version": "1.5", "generated_at": generated_at, "weights": weights,
+        "version": "1.6-a", "generated_at": generated_at, "weights": weights,
+        "analysis_clock": clock.model_dump(mode="json"),
         "stocks": [s.model_dump(mode="json") for s in stocks],
         "bars": {s: [b.model_dump(mode="json") for b in bars] for s, bars in bars_by_symbol.items()},
         "financials": {s: f.model_dump(mode="json") for s, f in financials.items()},
@@ -224,6 +245,7 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
 
     # ---- 落库（降级） ----
     db_saved = False
+    run_id = None
     if not settings.mock_mode:
         try:
             from storage import repository
@@ -245,12 +267,15 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
                         "band": output.band,
                         "valuation": ticker_ctx[stock.symbol]["valuation"],
                         "event_data_unknown": event_data_unknown,
-                        "version": "1.5", "generated_at": generated_at,
+                        "version": "1.6-a", "generated_at": generated_at,
+                        "decision_at": clock.decision_at.isoformat(),
+                        "price_session_limit": str(clock.price_session_limit),
+                        "analysis_mode": clock.mode,
                         "source": ctx.get("result_source", "unknown"),
                         "price_date": str(bars_by_symbol[stock.symbol][-1].date) if bars_by_symbol.get(stock.symbol) else None,
                     },
                 ))
-            repository.append_analysis_run(
+            run_id = repository.append_analysis_run(
                 audit_input,
                 result.model_dump(mode="json"),
             )
@@ -259,7 +284,8 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None) -> dic
             print(f"[pipeline] 落库失败（分析结果照常返回）：{exc}")
 
     return {"result": result, "outputs": outputs, "regime": regime,
-            "db_saved": db_saved, "cached": False, "audit_input": audit_input}
+            "db_saved": db_saved, "run_id": run_id, "cached": False,
+            "audit_input": audit_input}
 
 
 # ---------- 辅助 ----------

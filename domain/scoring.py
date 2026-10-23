@@ -6,6 +6,8 @@
      docs/10-module-contracts.md §10.2①③（MacroPoint / EngineOutput）
 """
 
+from datetime import date
+
 from pydantic import BaseModel, Field
 
 # 信号分档阈值（docs/05-scoring/engine.md）
@@ -47,6 +49,7 @@ class IndexLevel(BaseModel):
     symbol: str                     # ^GSPC / ^NDX / ^SOX
     close: float
     ma200: float
+    as_of: date | None = None
 
     @property
     def below_ma200(self) -> bool:
@@ -62,6 +65,7 @@ class IndexRegime(BaseModel):
 
     indexes: list[IndexLevel] = Field(min_length=1)
     vix: float | None = None
+    vix_as_of: date | None = None
     sox_atr14: float | None = None  # 费城半导体 ATR14（%）
 
     def regime_broken(self) -> bool:

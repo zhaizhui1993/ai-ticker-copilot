@@ -1,8 +1,8 @@
 # 美股 AI 股票分析系统 — 技术方案（模块化文档）
 
-> **v1.5 修订优先**：当前 P0 契约见 [事件完整性与估值准入](12-p0-evidence-integrity.md)，其他内容沿用 [v1.4 研究方案](11-ai-investment-revision.md)；下文保留早期设计背景，冲突处以修订为准。
+> **v1.5 当前基线**：事件完整性与估值准入见 [12-p0-evidence-integrity.md](12-p0-evidence-integrity.md)，其他内容沿用 [v1.4 研究方案](11-ai-investment-revision.md)。[v1.6 投资决策链改动技术方案](13-investment-decision-upgrade.md) 已开始分批实施，完成与待实施范围见该文档顶部；下文保留早期设计背景。
 
-> 版本：v1.2（2026-09-19）｜ 状态：方案评审稿，待确认后实施
+> 以下模块索引源于 v1.2（2026-09-19）评审稿；当前基线与分批实施状态以上方链接为准。
 > **文档组织**：每个系统模块一个目录，模块内的每个成分（子模块/子主题）单独成文，粒度对齐代码文件；各目录的 README.md 是模块导读（职责/依赖/成分索引）。
 > 本目录由单文件方案《股市》（v1.1）拆分而来，原文件保留作全文存档；后续更新以本目录为准。
 > v1.1 修订要点：技术面分层指标体系（[05-scoring/layered-technicals.md](05-scoring/layered-technicals.md)）、破位×事件分级规则（[04-events/breach-classification.md](04-events/breach-classification.md)）、当前事件自动沉淀（[04-events/auto-sedimentation.md](04-events/auto-sedimentation.md)）、种子事件库扩充至 10 条（[04-events/seed-events.md](04-events/seed-events.md)）、体制层硬约束（[05-scoring/engine.md](05-scoring/engine.md)）。
@@ -15,6 +15,7 @@
 docs/
 ├── README.md                  # 本索引
 ├── 10-module-contracts.md     # 模块交互与接口契约（横切规范）
+├── 13-investment-decision-upgrade.md # v1.6 投资决策链改动方案（拟实施）
 ├── 01-overview/               # 总览与架构（背景 / 架构 / 选型 / 目录结构）
 ├── 02-domain-models/          # 数据模型（用户配置 / 事件与信号模型）
 ├── 03-collectors/             # 数据采集层（缓存基座 / market / macro / 新闻管道 / X 双通道 api·crawl / 调度器）
@@ -40,6 +41,7 @@ docs/
 | [08-web/](08-web/README.md) | Web 面板 | web/ | 全部 | P8 |
 | [09-delivery/](09-delivery/README.md) | 交付与运维 | 根目录 + scripts/ + tests/ | 全部 | P0–P9 |
 | [10-module-contracts.md](10-module-contracts.md) | 模块交互与接口契约 | 跨模块 | 全部 | P0 定契约 |
+| [13-investment-decision-upgrade.md](13-investment-decision-upgrade.md) | 投资决策链改动方案（拟实施） | 跨模块 | 全部 | v1.6 草案 |
 
 ## 模块依赖关系
 

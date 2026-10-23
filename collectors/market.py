@@ -19,6 +19,7 @@ from collectors.base import network_retry, ttl_cache
 from domain import technicals
 from domain.scoring import IndexLevel, IndexRegime
 from domain.stock import DailyBar, Financials, MarketQuote
+from domain.asof import analysis_clock, completed_bars
 
 INDEX_SYMBOLS = ("^GSPC", "^NDX", "^SOX")
 VIX_SYMBOL = "^VIX"
@@ -54,7 +55,7 @@ class MarketCollector:
         return bars
 
     def get_daily_bars(self, symbol: str, window: int = 300) -> list[DailyBar]:
-        return self._history(symbol, window)
+        return completed_bars(self._history(symbol, window), analysis_clock())
 
     @ttl_cache("market_bars_range", ttl_seconds=24 * 3600)
     @network_retry
@@ -90,25 +91,31 @@ class MarketCollector:
         )
 
     @ttl_cache("market_regime_v14", ttl_seconds=15 * 60)
-    def get_index_regime(self) -> IndexRegime:
+    def get_index_regime(self, price_session_limit: date | None = None) -> IndexRegime:
         """指数体制层（v1.1）：三大指数 vs MA200 + VIX + 费半 ATR14。"""
+        limit = price_session_limit or analysis_clock().price_session_limit
         levels: list[IndexLevel] = []
         sox_bars: list[DailyBar] | None = None
         for symbol in INDEX_SYMBOLS:
-            bars = self._history(symbol, 300)
+            bars = [b for b in self._history(symbol, 300) if b.date <= limit]
             if technicals.sma(bars, 200) is None:
                 raise ValueError(f"{symbol}: MA200 数据不足")
             levels.append(IndexLevel(
                 symbol=symbol,
                 close=bars[-1].close,
                 ma200=technicals.sma(bars, 200) or 0.0,
+                as_of=bars[-1].date,
             ))
             if symbol == "^SOX":
                 sox_bars = bars
-        vix = self._history(VIX_SYMBOL, 30)[-1].close
+        vix_bars = [b for b in self._history(VIX_SYMBOL, 30) if b.date <= limit]
+        if not vix_bars:
+            raise ValueError("VIX 已完成日线缺失")
+        vix = vix_bars[-1].close
         return IndexRegime(
             indexes=levels,
             vix=vix,
+            vix_as_of=vix_bars[-1].date,
             sox_atr14=technicals.atr_pct(sox_bars) if sox_bars else None,
         )
 

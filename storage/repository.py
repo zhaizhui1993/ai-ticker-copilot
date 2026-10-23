@@ -8,7 +8,7 @@
 """
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from pydantic import BaseModel
 from pymysql.err import IntegrityError
@@ -439,3 +439,19 @@ def append_analysis_run(input_json: dict, result_json: dict) -> int:
              json.dumps(result_json, ensure_ascii=False)),
         )
         return cursor.lastrowid
+
+
+def list_analysis_runs(since: date) -> list[dict]:
+    """Return immutable runs for time-aware signal evaluation."""
+    lower_bound = datetime.combine(since - timedelta(days=1), datetime.min.time())
+    with get_conn() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT run_id, created_at, input_json, result_json FROM analysis_runs "
+            "WHERE created_at >= %s ORDER BY run_id",
+            (lower_bound,),
+        )
+        rows = cursor.fetchall()
+    return [{"run_id": r["run_id"], "created_at": r["created_at"],
+             "input": json.loads(r["input_json"]) if r["input_json"] else {},
+             "result": json.loads(r["result_json"]) if r["result_json"] else {}}
+            for r in rows]

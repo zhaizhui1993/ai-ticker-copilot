@@ -18,9 +18,10 @@ def enforce(result: AnalysisResult, fallback: AnalysisResult, ctx: dict, tickers
             ceiling, cap = Action.WATCH_ADD, 0.3 if ctx.get("regime_gate") else 1.0
             notes.append("体制或公司短板约束")
         if (ctx.get("regime_unknown") or ctx.get("event_data_unknown")
-                or data.get("data_insufficient") or data.get("calendar_unknown")):
+                or data.get("data_insufficient") or data.get("calendar_unknown")
+                or data.get("observation_only")):
             ceiling, cap = Action.WATCH, 0.0
-            notes.append("关键数据或日历不足，暂不增加风险")
+            notes.append("盘中观察或关键数据、日历不足，暂不增加风险")
         if data.get("event_window"):
             ceiling, cap = Action.WATCH, 0.0
             notes.append("等待" + data.get("event_desc", "重要事件") + "落地")

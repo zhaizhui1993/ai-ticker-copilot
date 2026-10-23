@@ -73,7 +73,7 @@ def dashboard(refresh: bool = False) -> dict:
         valuation = assess_valuation(stock.valuation, bars, market_today())
         signal, signal_note = snap.get("signal"), ""
         if signal in {"accumulate", "watch_add"}:
-            if snap.get("version") != "1.5":
+            if snap.get("version") not in {"1.5", "1.6-a"}:
                 signal, signal_note = "watch", "旧版信号缺少当前准入检查，请重新分析"
             elif not valuation.allows_add:
                 signal, signal_note = "watch", valuation.reason

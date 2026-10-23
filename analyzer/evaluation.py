@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import statistics
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+from domain.asof import analysis_clock, completed_bars
 from scoring.engine import band_of
 
 HORIZONS = (5, 20, 60)          # 前瞻窗口（交易日）
@@ -54,6 +56,45 @@ def _rate(values: list[float], pred) -> float:
 
 def load_signal_records(tickers: list[str] | None = None,
                         since: date | None = None) -> list[dict]:
+    """Load v1.6 immutable runs; old daily snapshots remain display-only."""
+    from storage import repository
+
+    since = since or date(2000, 1, 1)
+    allowed = set(tickers) if tickers else None
+    records = []
+    for run in repository.list_analysis_runs(since):
+        payload = run["input"]
+        if not str(payload.get("version", "")).startswith("1.6"):
+            continue
+        clock = payload.get("analysis_clock") or {}
+        decision_at = clock.get("decision_at")
+        if not decision_at:
+            continue
+        ctx = payload.get("ticker_context") or {}
+        bars_by_symbol = payload.get("bars") or {}
+        for signal in run["result"].get("signals", []):
+            ticker = signal.get("ticker")
+            if allowed is not None and ticker not in allowed:
+                continue
+            bars = bars_by_symbol.get(ticker) or []
+            if not bars:
+                continue
+            price_date = date.fromisoformat(bars[-1]["date"])
+            if price_date < since:
+                continue
+            records.append({
+                "run_id": run["run_id"], "ticker": ticker, "date": price_date,
+                "decision_at": decision_at, "execution_policy": "next_open",
+                "action": signal["action"], "band": ctx.get(ticker, {}).get("band"),
+                "confidence": signal.get("confidence"), "close": bars[-1]["close"],
+                "regime_gate": bool(payload.get("context", {}).get("regime_gate")),
+                "source": payload.get("context", {}).get("result_source", "unknown"),
+            })
+    return records
+
+
+def load_legacy_snapshot_records(tickers: list[str] | None = None,
+                                 since: date | None = None) -> list[dict]:
     """从快照表读取信号记录（action/close/confidence/band/regime_gate/source）。
 
     band 优先取落库的门槛后档位（analysis.band）；历史行缺失时按四维等权
@@ -107,7 +148,10 @@ def attach_forward_returns(records: list[dict], market) -> int:
     for ticker, group in by_ticker.items():
         start = min(r["date"] for r in group) - timedelta(days=10)
         try:
-            bars = market.get_daily_bars_between(ticker, start, date.today())
+            bars = completed_bars(
+                market.get_daily_bars_between(ticker, start, date.today() + timedelta(days=1)),
+                analysis_clock(),
+            )
         except Exception:
             missed += len(group)
             continue
@@ -119,31 +163,40 @@ def attach_forward_returns(records: list[dict], market) -> int:
             if i is None:
                 missed += 1
                 continue
-            for h in HORIZONS:
-                j = i + h
-                r[f"fwd_{h}d"] = (bars[j].close / bars[i].close - 1) * 100 if j < len(bars) else None
-            mae_window = bars[i + 1: i + 1 + MAE_WINDOW]
-            r["mae_20d"] = (min(b.low for b in mae_window) / bars[i].close - 1) * 100 if len(mae_window) == MAE_WINDOW else None
+            if r.get("execution_policy") == "next_open":
+                at = datetime.fromisoformat(r["decision_at"]).astimezone(ZoneInfo("America/New_York"))
+                first_date = at.date() if at.time() < time(9, 30) else at.date() + timedelta(days=1)
+                entry = next((k for k, b in enumerate(bars) if b.date >= first_date and b.open > 0), None)
+                if entry is None:
+                    missed += 1
+                    continue
+                r["entry_date"] = bars[entry].date
+                r["entry_price"] = bars[entry].open
+                for h in HORIZONS:
+                    j = entry + h - 1
+                    r[f"fwd_{h}d"] = (bars[j].close / bars[entry].open - 1) * 100 if j < len(bars) else None
+                mae_window = bars[entry:entry + MAE_WINDOW]
+                r["mae_20d"] = (min(b.low for b in mae_window) / bars[entry].open - 1) * 100 if len(mae_window) == MAE_WINDOW else None
+            else:
+                for h in HORIZONS:
+                    j = i + h
+                    r[f"fwd_{h}d"] = (bars[j].close / bars[i].close - 1) * 100 if j < len(bars) else None
+                mae_window = bars[i + 1: i + 1 + MAE_WINDOW]
+                r["mae_20d"] = (min(b.low for b in mae_window) / bars[i].close - 1) * 100 if len(mae_window) == MAE_WINDOW else None
 
     # 全池等权同期基准（用行情自身收盘，避免快照 close 口径混用）
     for r in records:
         for h in HORIZONS:
             r[f"bench_{h}d"] = None
             r[f"excess_{h}d"] = None
-    for d in {r["date"] for r in records}:
+    for key in {(r.get("run_id") if r.get("run_id") is not None else r["date"]) for r in records}:
         for h in HORIZONS:
-            vals = []
-            day_tickers = {r["ticker"] for r in records if r["date"] == d}
-            for ticker, bars in bars_by_ticker.items():
-                if ticker not in day_tickers:
-                    continue
-                i = idx_by_ticker[ticker].get(d)
-                if i is not None and i + h < len(bars) and bars[i].close:
-                    vals.append((bars[i + h].close / bars[i].close - 1) * 100)
+            group = [r for r in records if (r.get("run_id") if r.get("run_id") is not None else r["date"]) == key]
+            vals = [r[f"fwd_{h}d"] for r in group if r.get(f"fwd_{h}d") is not None]
             if vals:
                 bench = _mean(vals)
-                for r in records:
-                    if r["date"] == d and r.get(f"fwd_{h}d") is not None:
+                for r in group:
+                    if r.get(f"fwd_{h}d") is not None:
                         r[f"bench_{h}d"] = bench
                         r[f"excess_{h}d"] = r[f"fwd_{h}d"] - bench
     return missed
@@ -324,7 +377,8 @@ def regime_whipsaw(market, symbol: str, years: float = 6.0) -> str:
 
 def build_full_report(market, since: date | None = None) -> str:
     """固定指标集的月度评估（任一段失败降级标注，不中断其他段）。"""
-    lines = [f"# 信号评测月报（生成于 {datetime.now():%Y-%m-%d %H:%M}）", ""]
+    lines = [f"# 信号评测月报（生成于 {datetime.now():%Y-%m-%d %H:%M}）", "",
+             "口径：v1.6 逐次信号，信号后的下一常规交易时段开盘进入；旧日快照不混入。", ""]
 
     try:
         records = load_signal_records(since=since)

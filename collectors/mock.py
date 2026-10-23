@@ -52,7 +52,7 @@ class MockMarket:
                            volume=last.volume,
                            quoted_at=datetime.now(timezone.utc))
 
-    def get_index_regime(self) -> IndexRegime:
+    def get_index_regime(self, price_session_limit: date | None = None) -> IndexRegime:
         # 健康体制：三大指数均在 MA200 上方，VIX 温和（牛市内深回调原型）
         return IndexRegime(
             indexes=[

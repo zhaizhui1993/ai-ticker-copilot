@@ -2,6 +2,7 @@
 
 import threading
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ _ANALYSIS_LOCK = threading.Lock()
 class RunIn(BaseModel):
     refresh: bool = False
     tickers: list[str] | None = None
+    mode: Literal["eod", "intraday_observe"] = "eod"
 
 
 @router.post("/api/analysis/run")
@@ -24,7 +26,8 @@ def run(body: RunIn) -> dict:
 
     from analyzer.pipeline import EmptyPoolError, run_analysis
     try:
-        outcome = run_analysis(refresh=body.refresh, tickers=body.tickers)
+        outcome = run_analysis(refresh=body.refresh, tickers=body.tickers,
+                               mode=body.mode)
         result = outcome["result"]
         return {
             "generated_at": result.generated_at,
@@ -34,6 +37,8 @@ def run(body: RunIn) -> dict:
             "outputs": {t: o.model_dump() for t, o in outcome.get("outputs", {}).items()},
             "regime_gate": bool(outcome.get("regime") and outcome["regime"].regime_broken()),
             "db_saved": outcome.get("db_saved", False),
+            "run_id": outcome.get("run_id"),
+            "analysis_clock": outcome.get("audit_input", {}).get("analysis_clock"),
         }
     except EmptyPoolError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

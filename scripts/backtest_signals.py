@@ -1,4 +1,4 @@
-"""信号评测 CLI（P0-3 演进）：薄封装，逻辑在 analyzer/evaluation.py。
+    """信号评测 CLI：v1.6 逐次分析记录；逻辑在 analyzer/evaluation.py。
 
 模式：
   默认            信号前瞻研究（含全池等权同期基准对照列）
