@@ -16,10 +16,11 @@ def mock_env(monkeypatch, tmp_path):
 
 def test_build_chat_context_grounded() -> None:
     from analyzer.chat import build_chat_context
+    from events_lib.loader import load_seed_events
 
     ctx = build_chat_context()
     assert "NVDA" in ctx["pool"]                       # 股票池入上下文
-    assert ctx["lib_count"] == 43                      # 历史事件库摘要（v1.3 对照批次后）
+    assert ctx["lib_count"] == len(load_seed_events())  # 摘要反映当前种子库
     assert "2026-07-ai-valuation-pullback" in ctx["lib"]
     assert "LLM 未配置" in ctx["degraded"]             # 降级状态如实标注
     assert ("不可用" in ctx["events"]) or ("暂无" in ctx["events"]) or ("[" in ctx["events"])

@@ -15,6 +15,7 @@ SYSTEM_PROMPT = """你是金融市场事件分析专家。给定一个当前事�
 3. magnitude：预期影响强度 0~1。**状态调节**：候选标注了历史事件前状态（乖离率/距52周高）时，
    与当前事件标注的标的现状态比较——当前明显更拥挤（乖离更高/更接近新高），magnitude 上调；
    明明更超卖/离前高更远，magnitude 下调；状态未标注则不调节。
+   若候选标注"价格影响未核验"，该候选 magnitude 必须为 0，仅能作事实类比。
 4. analogy_notes 必须写清"哪些维度相似、哪些维度不同"，给出可核对的理由，禁止只输出分数。
 5. difference 必填，覆盖两层（无数据层写"未标注"）：
    ① 事件差异：利率/政策环境、产业阶段、量级规模、传导路径至少一处；
@@ -51,8 +52,10 @@ def build_match_prompt(event, candidates: list) -> str:
             for t in c.tickers_affected
         ) or "（未指明）"
         fizzled_mark = "｜**fizzled 对照（预期冲击未兑现）**" if c.fizzled else ""
+        unverified_mark = ("｜价格影响未核验" if c.tickers_affected
+                           and all(t.magnitude == 0 for t in c.tickers_affected) else "")
         cand_lines.append(
-            f"[{i}] {c.event_id}（{c.start_date}，{c.category.value}{fizzled_mark}）\n"
+            f"[{i}] {c.event_id}（{c.start_date}，{c.category.value}{fizzled_mark}{unverified_mark}）\n"
             f"    {c.name}\n    机制：{c.mechanism}\n    影响：{impacts}"
         )
     return USER_TEMPLATE.format(event=event_desc, n=len(candidates), candidates="\n".join(cand_lines))

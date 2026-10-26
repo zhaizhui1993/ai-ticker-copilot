@@ -118,8 +118,14 @@ def rerank_matches(event, candidates) -> list[EventMatchResult] | None:
         batch: MatchBatch = structured.invoke(
             [("system", SYSTEM_PROMPT), ("human", build_match_prompt(event, candidates))]
         )
-        valid_ids = {c.event_id for c in candidates}
-        results = [m for m in batch.matches if m.event_id in valid_ids]
+        candidate_by_id = {c.event_id: c for c in candidates}
+        results = [m for m in batch.matches if m.event_id in candidate_by_id]
+        for match in results:
+            impacts = candidate_by_id[match.event_id].tickers_affected
+            if impacts and all(impact.magnitude == 0 for impact in impacts):
+                # 事实层已核而历史价格未核：LLM 不能自行补出冲击强度。
+                match.magnitude = 0
+                match.analogy_notes += "；历史价格影响未核验，仅供事实类比"
         return results or None
     except Exception as exc:
         print(f"[llm] 类比精排降级为规则版：{exc}")

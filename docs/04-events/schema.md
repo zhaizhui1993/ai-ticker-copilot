@@ -44,6 +44,7 @@ class HistoricalEvent(BaseModel):
     tickers_affected: list[TickerImpact]
     market: MarketMetrics
     tags: list[str]
+    source_urls: list[str]          # 原始公告或监管文件；新种子的事实依据
     fizzled: bool = False           # 对照事件（v1.3）：预期冲击未兑现，浅回撤参与 base-rate 修正
 ```
 

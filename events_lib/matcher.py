@@ -19,6 +19,10 @@ from domain.events import (
 SIMILARITY_THRESHOLD = 0.6  # ≥0.6 才进入类比聚合
 
 
+def _canonical_ticker(ticker: str) -> str:
+    return "GOOGL" if ticker.upper() == "GOOG" else ticker.upper()
+
+
 # ---------- ① 硬检索 ----------
 
 
@@ -36,7 +40,7 @@ def hard_retrieve(
 ) -> list[HistoricalEvent]:
     """对事件库全量规则打分排序（库小，O(N) 即可），取 top-k。"""
     event_keywords = {kw.lower() for kw in event.keywords}
-    event_tickers = set(event.tickers_mentioned)
+    event_tickers = {_canonical_ticker(t) for t in event.tickers_mentioned}
     event_month = event.reference_date.month if event.reference_date else None
 
     scored: list[tuple[float, str, HistoricalEvent]] = []
@@ -46,7 +50,7 @@ def hard_retrieve(
             score += 10
         cand_keywords = {kw.lower() for kw in candidate.keywords}
         score += 5 * len(event_keywords & cand_keywords)
-        cand_tickers = {t.ticker for t in candidate.tickers_affected}
+        cand_tickers = {_canonical_ticker(t.ticker) for t in candidate.tickers_affected}
         score += 8 * len(event_tickers & cand_tickers)
         if _month_closeness(event_month, candidate.start_date.month):
             score += 3
@@ -62,7 +66,7 @@ def hard_retrieve(
 def rule_rerank(event: CurrentEvent, candidates: list[HistoricalEvent]) -> list[EventMatchResult]:
     """规则版精排：相似度由四个可核对成分构成（P6 替换为 LLM 精排）。"""
     event_keywords = {kw.lower() for kw in event.keywords}
-    event_tickers = set(event.tickers_mentioned)
+    event_tickers = {_canonical_ticker(t) for t in event.tickers_mentioned}
     event_month = event.reference_date.month if event.reference_date else None
 
     results: list[EventMatchResult] = []
@@ -74,7 +78,7 @@ def rule_rerank(event: CurrentEvent, candidates: list[HistoricalEvent]) -> list[
         if event_keywords:
             coverage = len(event_keywords & cand_keywords) / min(len(event_keywords), 4)
             parts += 0.4 * min(1.0, coverage)
-        cand_tickers = {t.ticker for t in candidate.tickers_affected}
+        cand_tickers = {_canonical_ticker(t.ticker) for t in candidate.tickers_affected}
         if event_tickers:
             parts += 0.2 * min(1.0, len(event_tickers & cand_tickers))
         if _month_closeness(event_month, candidate.start_date.month):
@@ -82,7 +86,7 @@ def rule_rerank(event: CurrentEvent, candidates: list[HistoricalEvent]) -> list[
 
         # 方向/强度沿用库内记录的众数水平（规则版无法独立判断）
         impacts = [t for t in candidate.tickers_affected
-                   if not event_tickers or t.ticker in event_tickers] or candidate.tickers_affected
+                   if not event_tickers or _canonical_ticker(t.ticker) in event_tickers] or candidate.tickers_affected
         direction = impacts[0].direction if impacts else -1
         magnitude = max((t.magnitude for t in impacts), default=0.5)
 

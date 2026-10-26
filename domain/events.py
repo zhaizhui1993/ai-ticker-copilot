@@ -38,7 +38,7 @@ class EventScope(str, Enum):
 class TickerImpact(BaseModel):
     ticker: str                        # 个股/ETF/指数，如 NVDA、SMH、SPX
     direction: Literal[-1, 0, 1]       # -1 负 / 0 中性 / +1 正
-    magnitude: float = Field(ge=0, le=1)
+    magnitude: float = Field(ge=0, le=1)  # 0=价格影响待核验，不能驱动事件分
     drawdown: float | None = None      # 最大回撤 %（如 -20.3）
     metric_source: str | None = None
     drawdown_days: int | None = None   # 达底交易日数（新回填口径）
@@ -72,6 +72,7 @@ class HistoricalEvent(BaseModel):
     tickers_affected: list[TickerImpact] = Field(default_factory=list)
     market: MarketMetrics = Field(default_factory=MarketMetrics)
     tags: list[str] = Field(default_factory=list)
+    source_urls: list[str] = Field(default_factory=list)  # 事实层原始公告/监管文件，供复核
     fizzled: bool = False              # 对照事件（v1.3）：雷声大雨点小——预期冲击未兑现。
                                        # 类比聚合时的冲击修正项，防止库内全是"咬人的狗"高估影响
 

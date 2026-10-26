@@ -35,7 +35,7 @@ ai-ticker-copilot/
 │   ├── x_source.py             # X 双通道路由（X_MODE=api|crawl|off）+ 节流/入库编排
 │   └── mock.py                 # MOCK_MODE 时确定性随机生成静态数据（固定种子，无网络）
 ├── events_lib/
-│   ├── seed_events.yaml        # 种子事件库（31 条，随仓库版本管理）
+│   ├── seed_events.yaml        # 种子事件库（59 条，随仓库版本管理）
 │   ├── loader.py               # yaml → 校验 → upsert MySQL events 表（source='seed'）
 │   ├── matcher.py              # 硬检索 top-K + 精排（LLM 出口在 analyzer.llm）+ 降级路径
 │   ├── mine.py                 # 回调波段挖掘（zigzag：峰谷/幅度/达底/恢复 → 事件草稿骨架）

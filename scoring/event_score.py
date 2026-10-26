@@ -70,7 +70,7 @@ class EventScorer:
         供状态缺口调节（v1.3）。"""
         groups = defaultdict(dict)
         for match, age in matches or []:
-            if match.similarity >= 0.6 and age >= 0:
+            if match.similarity >= 0.6 and age >= 0 and match.magnitude > 0:
                 key = match.current_event_id or match.event_id
                 old = groups[key].get(match.event_id)
                 if old is None or match.similarity > old[0].similarity:
@@ -88,7 +88,9 @@ class EventScorer:
                 match.current_category or category_by_event.get(match.event_id, ""), HALF_LIFE_DAYS)
             half_lives_used.add(half_life)
             freshness = 0.5 ** (days_ago / half_life)
-            listed = ticker.upper() in {t.upper() for t in match.affected_tickers}
+            listed_ticker = "GOOGL" if ticker.upper() == "GOOG" else ticker.upper()
+            listed = listed_ticker in {"GOOGL" if t.upper() == "GOOG" else t.upper()
+                                       for t in match.affected_tickers}
             discount = 1.0 if listed else NON_LISTED_DISCOUNT
             factor = _state_factor(match, current_state)
             if factor != 1.0:

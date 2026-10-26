@@ -3,7 +3,7 @@
 
 from datetime import date
 
-from domain.events import CurrentEvent, EventCategory, EventScope
+from domain.events import CurrentEvent, EventCategory, EventMatchResult, EventScope
 from events_lib.loader import load_seed_events
 from events_lib.matcher import (
     hard_retrieve,
@@ -97,6 +97,39 @@ def test_degraded_path_low_confidence() -> None:
     assert conclusion.confidence == "low"
     assert "低置信" in conclusion.note
     assert len(conclusion.matched_event_ids) <= 2        # 硬检索 top-2
+
+
+def test_unverified_seed_cannot_gain_impact_from_llm(monkeypatch) -> None:
+    from analyzer import llm
+    from analyzer.schemas import MatchBatch
+
+    seed = next(e for e in load_seed_events() if e.event_id == "2024-01-amd-mi300-ramp")
+
+    class FakeChat:
+        def with_structured_output(self, *args, **kwargs):
+            return self
+
+        def invoke(self, *args, **kwargs):
+            return MatchBatch(matches=[EventMatchResult(
+                event_id=seed.event_id, similarity=0.9, direction=1,
+                magnitude=0.9, affected_tickers=["AMD"],
+            )])
+
+    monkeypatch.setattr(llm, "llm_available", lambda: True)
+    monkeypatch.setattr(llm, "_chat", FakeChat)
+    matches = llm.rerank_matches(_event(category=EventCategory.TECH), [seed])
+    assert matches is not None
+    assert matches[0].magnitude == 0
+    assert "未核验" in matches[0].analogy_notes
+
+
+def test_goog_and_googl_share_company_event_match() -> None:
+    seed = next(e for e in load_seed_events() if e.event_id == "2024-07-googl-cloud-profit-milestone")
+    current = _event(category=EventCategory.TECH, tickers_mentioned=["GOOG"])
+    assert hard_retrieve(current, [seed], k=1)[0].event_id == seed.event_id
+    match = rule_rerank(current, [seed])[0]
+    assert match.affected_tickers == ["GOOGL"]
+    assert match.similarity >= 0.5
 
 
 def test_2026_07_event_carries_measured_data() -> None:

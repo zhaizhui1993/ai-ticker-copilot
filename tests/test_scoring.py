@@ -114,6 +114,28 @@ def test_event_category_decay_and_renorm() -> None:
     assert "重归一化" in no_x.degraded_note
 
 
+def test_unverified_history_does_not_dilute_event_score() -> None:
+    scorer = EventScorer()
+    measured = EventMatchResult(event_id="measured", current_event_id="current",
+                                similarity=0.8, direction=-1, magnitude=0.8,
+                                affected_tickers=["AMD"])
+    unverified = EventMatchResult(event_id="unverified", current_event_id="current",
+                                  similarity=0.9, direction=1, magnitude=0,
+                                  affected_tickers=["AMD"])
+    baseline = scorer.score("AMD", [(measured, 0)], x_sentiment=50)
+    with_unverified = scorer.score("AMD", [(measured, 0), (unverified, 0)], x_sentiment=50)
+    assert with_unverified.score == baseline.score
+    assert with_unverified.indicators["matched"] == 1
+
+
+def test_goog_uses_googl_company_exposure() -> None:
+    match = EventMatchResult(event_id="alphabet", similarity=0.8, direction=-1,
+                             magnitude=0.5, affected_tickers=["GOOGL"])
+    scorer = EventScorer()
+    assert scorer.score("GOOG", [(match, 0)], x_sentiment=50).score == scorer.score(
+        "GOOGL", [(match, 0)], x_sentiment=50).score
+
+
 # ---------- 产业面 ----------
 
 
