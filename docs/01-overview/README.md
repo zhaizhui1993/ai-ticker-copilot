@@ -9,6 +9,6 @@
 | 文档 | 内容 | 来源 |
 |---|---|---|
 | [background.md](background.md) | 背景与目标、系统定位与边界、已确认决策 | 原方案 §1 |
-| [architecture.md](architecture.md) | 架构分层图、核心设计原则、一次完整分析的数据流 | 原方案 §2 |
+| [architecture.md](architecture.md) | 当前代码的技术架构、新闻与分析数据流、财报评分入口 | 当前实现 |
 | [tech-stack.md](tech-stack.md) | 技术选型表与"明确不用"清单 | 原方案 §3 |
 | [structure.md](structure.md) | 项目目录结构 | 原方案 §4 |

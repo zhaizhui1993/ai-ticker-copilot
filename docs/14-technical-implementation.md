@@ -3,6 +3,8 @@
 > **定位**:面向实施者/二开者的代码级导览。所有签名、公式、阈值、降级行为均逐一对照 v1.6-a 源码核实(2026-10,dev 分支)。与 [10-module-contracts.md](10-module-contracts.md) 互补:契约管接缝规范,本文管实现事实(含公式与边界行为)。
 > **约定**:`§` 引用本文小节;`模块/文件.py` 为项目相对路径;所有日期/时间未注明处均为美东(ET)。
 
+从整体设计入手请先看 [系统技术架构与核心数据流](01-overview/architecture.md) 和 [核心领域模型](02-domain-models/core-models.md)。
+
 ## 目录
 
 1. [运行时架构](#1-运行时架构)
@@ -454,7 +456,7 @@ run_analysis(refresh=False, tickers=None, mode="eod"|"intraday_observe")
 | 体制层 | `market.get_index_regime(clock.price_session_limit)` | ^GSPC/^NDX/^SOX vs MA200 + ^VIX + ^SOX ATR14;失败→`regime=None`(§6 无知即禁手) |
 | 宏观 | `get_macro().get_all()` | FRED 七系列;失败→空 dict,宏观分缺失计 50 |
 | 行情 | `completed_bars(market.get_daily_bars(sym, 300), clock)` | 预取池内 + 全部产业篮子 `BASKETS[segment]` + SPY(防产业分退化为个股动量) |
-| 财务 | `market.get_financials(sym)` | 逐票 best-effort,字段缺失为 None |
+| 财务 | `market.get_financials(sym)` | 逐票 best-effort；季度营收与现金流按期末日期对齐，年度现金流单独保留，字段缺失为 None |
 | 日历 | `event_calendar(market, sym, today, days=3)` | FOMC 硬编码日历 + yfinance 财报日 |
 | 活跃事件 | `repository.list_active_current_events(today)` | 全部 active,不按抓取窗口截断;任一 `impact_date is None` → `event_data_unknown=True` |
 
@@ -556,7 +558,7 @@ indicators 记录 `类比分 / 半衰期(天) / 状态调节(x…~x…) / 情绪
 |---|---|---|
 | 成长 | 40% | `revenue_yoy`:≥30→90;≥10→70;≥0→50;<0→25;缺失剔除 |
 | 估值 | 15% | PE>0 且 rev_yoy>0:类 PEG=PE/rev_yoy,<1.5→75;<2.5→60;<3.5→45;≥3.5→30;**周期段(equipment/foundry)封顶 55**(低 PE 常伴盈利峰值)。无正增长:绝对 PE,<20→55;<35→50;<60→40;≥60→30(≤55 不给高分)。PE 缺失/亏损→剔除 |
-| 质量 | 30% | 毛利率 50+(gm−40)×0.5(子权 .5)+ FCF 正负 80/20(.3)+ ROE 50+(roe−15)×0.3(.2);缺项归一化,不视为负值 |
+| 质量 | 30% | 毛利率 50+(gm−40)×0.5(子权 .5)+ 现金转化(.3)+ ROE 50+(roe−15)×0.3(.2);缺项归一化,不视为负值 |
 | 技术面 | 15% | 三层:**趋势 40% + 择时 35% + 伤害 25%**,见下;K 线 <60 根整腿剔除 |
 
 技术面子项(`domain/technicals` 纯函数):
@@ -565,7 +567,9 @@ indicators 记录 `类比分 / 半衰期(天) / 状态调节(x…~x…) / 情绪
 - **择时**(RSI14):40~50→70(回踩买区);50~65→60;>70→45(过热不追);30~40→55;<30→35(深度超卖,需体制层配合解读);
 - **伤害**(距 52 周高回撤):>−10%→60;>−25%→50;>−40%→40;≤−40%→30。
 
-indicators 额外产出 `PE / data_coverage(5 字段非空比例) / fundamentals_ready(营收YoY+毛利率+FCF 全有→1)`。
+现金转化优先用最近季度 `FCF/营收`（%），映射分 `clamp(50+3×比率)`；连续四季数据齐全且季度期末连续时，现金转化分 = 最近季度映射分×60% + 四季合计 `FCF/营收` 映射分×40%。季度 FCF = 同期经营现金流 − 正数资本开支。最新季度现金流缺失时不拿旧年度值补齐；只有季度报表完全不可用时，才以年度 FCF 正负 80/20 作原有粗筛。详见 [公司评分](05-scoring/company-score.md)。
+
+indicators 额外产出 `PE / data_coverage(5 字段非空比例) / fundamentals_ready(营收YoY+毛利率+当前可用现金转化证据全有→1)`；季度数据可用时也输出最新财季、同季现金流与季度/四季自由现金流率。
 
 ### 4.6 估值准入(scoring/valuation.py,硬门槛,LLM 不可覆盖)
 
@@ -666,7 +670,9 @@ scope=MACRO_POLICY / GEOPOLITICAL → 全池(route=market,"共同风险")
 
 ```
 data_insufficient = ¬fundamentals_ready ∨ 无bars ∨ (today − 最新bar.date)>5天
-                    ∨ 财报period_end>550天 ∨ market_mismatch(体制层as_of日期 ≠ 个股最新bar日期)
+                    ∨ (有季度报表且最新季度期末距今>180天)
+                    ∨ (无季度报表且年度现金流期末距今>550天)
+                    ∨ market_mismatch(体制层as_of日期 ≠ 个股最新bar日期)
 ```
 
 命中(或 regime 未知 / event_data_unknown / calendar.unknown / 盘中 / 事件窗口 / 估值未过)→ 档位"积极/中性偏多"压"中性偏空" + `position_cap=0`。
@@ -926,7 +932,7 @@ asof.analysis_clock(mode="eod", now=None) -> AnalysisClock;asof.completed_bars(b
 loader.load_stocks(path=None);load_influencers();load_scoring_weights()    # 校验合计=1.0
 ```
 
-核心 domain 模型:`Action(四档)`、`TickerSignal{action,confidence,reason,risks,price_target_hint,position_cap,valuation}`、`AnalysisResult{generated_at,signals,market_summary,disclaimer}`、`CurrentEvent`(§3.1 身份字段+status/merged_into/influence_start_date)、`HistoricalEvent{tickers_affected: TickerImpact(含 pre_* 四字段), market, fizzled}`、`EventMatchResult{similarity,direction,magnitude,difference,pre_bias_ma200,…}`、`PriceReaction`(§5.5)、`FourDimScores/ScoreBreakdown/IndexRegime/EngineOutput`、`ValuationEvidence/ValuationAssessment`、`StockConfig/InfluencerConfig/DailyBar/Financials`。
+核心 domain 模型及关系详见 [核心领域模型](02-domain-models/core-models.md)。财务载体包括 `Financials.quarters: list[QuarterlyFinancials]`，季度和年度现金流分开保存。
 
 ---
 

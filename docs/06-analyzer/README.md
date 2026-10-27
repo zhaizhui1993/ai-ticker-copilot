@@ -14,7 +14,7 @@
 
 ## pipeline 编排（analyzer/pipeline.py）
 
-`run_analysis()`（同步）按"取数 → 事件匹配（[04-events](../04-events/README.md)）→ 四维评分（[05-scoring](../05-scoring/README.md)）→ LLM 综合研判 → 落库（[07-storage](../07-storage/README.md)）"顺序编排，返回 `{result, outputs, regime, db_saved, cached}`；**同日幂等**（当日快照已存在且未 refresh 直接回放，不重复调 LLM；mock 模式跳过幂等与落库；DB 不可用时跳过落库照常出结果）。并发防护在 Web 层（threading.Lock，撞车 409），pipeline 自身无锁（运行时时序见 [10-module-contracts.md §10.4 场景 B](../10-module-contracts.md)）。
+`run_analysis()`（同步）按"取数 → 事件匹配（[04-events](../04-events/README.md)）→ 四维评分（[05-scoring](../05-scoring/README.md)）→ 估值与数据门槛 → LLM 综合研判 → 代码终裁 → 落库（[07-storage](../07-storage/README.md)）"顺序编排，返回 `{result, outputs, regime, db_saved, run_id, cached, audit_input}`。每次重新组装分析证据，采集缓存独立；mock 模式跳过落库，DB 不可用时分析照常返回。Web 手动触发有非阻塞锁（并发返回 409）；pipeline 自身无锁（运行时时序见 [10-module-contracts.md §10.4 场景 B](../10-module-contracts.md)）。
 
 ## 研究助理对话（analyzer/chat.py，实施期增补）
 

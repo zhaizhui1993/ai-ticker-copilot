@@ -1,6 +1,15 @@
 # 美股 AI 股票分析系统 — 技术方案（模块化文档）
 
-> **v1.5 当前基线**：事件完整性与估值准入见 [12-p0-evidence-integrity.md](12-p0-evidence-integrity.md)，其他内容沿用 [v1.4 研究方案](11-ai-investment-revision.md)。[v1.6 投资决策链改动技术方案](13-investment-decision-upgrade.md) 已开始分批实施，完成与待实施范围见该文档顶部；下文保留早期设计背景。
+## 从这里开始
+
+| 想了解 | 文档 |
+|---|---|
+| 核心技术架构与两条数据流 | [系统技术架构与核心数据流](01-overview/architecture.md) |
+| 核心领域模型及对象关系 | [核心领域模型](02-domain-models/core-models.md) |
+| 代码级接口、算法和降级行为 | [技术实现文档](14-technical-implementation.md) |
+| 模块间调用契约 | [模块交互与接口契约](10-module-contracts.md) |
+
+> **当前代码以 v1.6-a 逐步实施版为准**：先读上方架构、领域模型与技术实现文档。事件完整性与估值准入见 [12-p0-evidence-integrity.md](12-p0-evidence-integrity.md)，后续计划见 [13-investment-decision-upgrade.md](13-investment-decision-upgrade.md)；下文保留早期设计背景。
 
 > 以下模块索引源于 v1.2（2026-09-19）评审稿；当前基线与分批实施状态以上方链接为准。
 > **文档组织**：每个系统模块一个目录，模块内的每个成分（子模块/子主题）单独成文，粒度对齐代码文件；各目录的 README.md 是模块导读（职责/依赖/成分索引）。
@@ -15,11 +24,12 @@
 docs/
 ├── README.md                  # 本索引
 ├── 10-module-contracts.md     # 模块交互与接口契约（横切规范）
+├── 14-technical-implementation.md # 当前代码级技术实现
 ├── 13-investment-decision-upgrade.md # v1.6 投资决策链改动方案（拟实施）
 ├── 01-overview/               # 总览与架构（背景 / 架构 / 选型 / 目录结构）
 ├── 02-domain-models/          # 数据模型（用户配置 / 事件与信号模型）
 ├── 03-collectors/             # 数据采集层（缓存基座 / market / macro / 新闻管道 / X 双通道 api·crawl / 调度器）
-├── 04-events/                 # 历史事件库（schema / 31 条种子 / 初始化 / 挖掘器 / 价格反应 / 自动沉淀 / 匹配 / 分级 / 日历）
+├── 04-events/                 # 历史事件库（schema / 种子 / 初始化 / 挖掘器 / 价格反应 / 自动沉淀 / 匹配 / 分级 / 日历）
 ├── 05-scoring/                # 评分引擎（四维 scorer / 分层指标 / engine）
 ├── 06-analyzer/               # LLM 研判层（接入 / 调用边界 / prompts）
 ├── 07-storage/                # 存储层（DDL / 事务）
@@ -41,6 +51,7 @@ docs/
 | [08-web/](08-web/README.md) | Web 面板 | web/ | 全部 | P8 |
 | [09-delivery/](09-delivery/README.md) | 交付与运维 | 根目录 + scripts/ + tests/ | 全部 | P0–P9 |
 | [10-module-contracts.md](10-module-contracts.md) | 模块交互与接口契约 | 跨模块 | 全部 | P0 定契约 |
+| [14-technical-implementation.md](14-technical-implementation.md) | 当前代码级技术实现 | 跨模块 | 全部 | 持续更新 |
 | [13-investment-decision-upgrade.md](13-investment-decision-upgrade.md) | 投资决策链改动方案（拟实施） | 跨模块 | 全部 | v1.6 草案 |
 
 ## 模块依赖关系

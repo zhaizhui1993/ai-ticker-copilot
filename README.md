@@ -58,7 +58,7 @@ uv run python scripts/initialize_history.py --initialize
     事件管道（默认 20min 轮询）：多源抓取 → 去重 → 预过滤 → LLM 结构化 → 价格反应富化 → 入库+提醒
     数据管道（低频）：yfinance 行情/财报 + FRED 宏观 + X 帖子（X_MODE 双通道，每博主每天 1 次）
 [2] 事件匹配：当前事件 → 硬检索历史库 top-5 → LLM 精排(相似度/方向/强度) → 每事件 top-3 类比
-[3] 四维评分：宏观 / 事件(类比+情绪) / 产业(篮子强弱) / 公司(基本面+技术面)
+[3] 四维评分：宏观 / 事件(历史类比，X 情绪未接入) / 产业(篮子强弱) / 公司(基本面+技术面)
     [4] 体制门槛：指数破位 → 档位压至中性偏多 + 仓位上限系数 0.3（环境只做开关，不进加权）
 [5] LLM 研判：四维分 + 原始指标 + 类比结论 → 结构化信号（偏离分档必须说明理由）
 [6] 落库展示：快照 UPSERT → Web 面板（信号/理由/风险/免责声明）
@@ -181,6 +181,7 @@ ai-ticker-copilot/
 
 完整技术方案见 [docs/README.md](docs/README.md)（模块化文档，粒度对齐代码文件）：
 
+- 快速理解系统：[核心技术架构与数据流](docs/01-overview/architecture.md) ｜ [核心领域模型](docs/02-domain-models/core-models.md) ｜ [代码级技术实现](docs/14-technical-implementation.md)
 - 总览与架构：[docs/01-overview/](docs/01-overview/README.md)
 - 模块交互与接口契约：[docs/10-module-contracts.md](docs/10-module-contracts.md)
 - 各模块文档：采集 [03](docs/03-collectors/README.md) ｜ 事件库 [04](docs/04-events/README.md) ｜ 评分 [05](docs/05-scoring/README.md) ｜ LLM [06](docs/06-analyzer/README.md) ｜ 存储 [07](docs/07-storage/README.md) ｜ Web [08](docs/08-web/README.md)
