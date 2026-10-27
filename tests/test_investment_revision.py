@@ -25,6 +25,56 @@ def test_missing_fcf_is_not_negative_and_zero_roe_is_not_missing():
     assert scorer.score("TEST", [], base.model_copy(update={"roe": None})).indicators["质量"] != unknown.indicators["质量"]
 
 
+def test_quarterly_financials_match_periods_and_override_annual_cash(monkeypatch):
+    import pandas as pd
+    from collectors import market
+
+    dates = pd.to_datetime(["2026-09-30", "2026-06-30", "2026-03-31",
+                            "2025-12-31", "2025-09-30"])
+    income = pd.DataFrame([[1235.837, 520, 400, 380, 519]],
+                          index=["Total Revenue"], columns=dates) * 1e6
+    cash_dates = [dates[1], dates[0], dates[2], dates[3]]  # 数据源列顺序不可靠
+    cash = pd.DataFrame([
+        [226.432, -27.147, 60, 50],
+        [-30, -153.487, -20, -20],
+    ], index=["Operating Cash Flow", "Capital Expenditure"], columns=cash_dates) * 1e6
+    annual = pd.DataFrame([[200], [-100]],
+                          index=["Operating Cash Flow", "Capital Expenditure"],
+                          columns=pd.to_datetime(["2025-12-31"])) * 1e6
+
+    class Ticker:
+        quarterly_financials = income
+        quarterly_cashflow = cash
+        cashflow = annual
+        info = {"grossMargins": 0.5, "returnOnEquity": 0.1, "trailingPE": 30}
+
+    monkeypatch.setattr(market.yf, "Ticker", lambda _: Ticker())
+    monkeypatch.setattr(market, "_sleep", lambda: None)
+    fin = market.MarketCollector.get_financials.__wrapped__(market.MarketCollector(), "BE")
+    assert fin.quarters[0].period_end == date(2026, 9, 30)
+    assert round(fin.revenue_yoy) == 138
+    assert round(fin.quarters[0].free_cash_flow / 1e6, 3) == -180.634
+    assert fin.fcf_positive  # 年度口径仍为正，但不能覆盖最新季度
+    scored = CompanyScorer().score("BE", [], fin)
+    assert scored.indicators["季度自由现金流率"] < -14
+    assert scored.indicators["连续四季自由现金流率"] is not None
+    assert "最近季度" in scored.rationale
+    improved = fin.model_copy(deep=True)
+    improved.quarters[0].free_cash_flow = 180e6
+    assert CompanyScorer().score("BE", [], improved).score > scored.score
+
+
+def test_latest_quarter_missing_cash_does_not_reuse_annual_fcf():
+    from domain.stock import QuarterlyFinancials
+
+    fin = Financials(revenue_yoy=138, gross_margin=50, fcf_positive=True,
+                     quarters=[QuarterlyFinancials(period_end=date(2026, 9, 30), revenue=1.2e9)])
+    scored = CompanyScorer().score("BE", [], fin)
+    assert not scored.indicators["fundamentals_ready"]
+    assert "年度 FCF 不代替当季数据" in scored.degraded_note
+    assert "季度自由现金流率" not in scored.indicators
+
+
 def test_current_event_analogs_normalized_and_deduplicated():
     scorer = EventScorer()
     one = EventMatchResult(event_id="a", current_event_id="now", similarity=1,

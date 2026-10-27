@@ -13,7 +13,7 @@ yfinance 单一来源提供：
 | 事件窗口日线 | `get_daily_bars_between(symbol, start, end)`（TTL 24h） | 04 量化回填/挖掘器/自动沉淀 |
 | 实时报价 | `get_quote(symbol)` → MarketQuote（dashboard 支持 `?refresh=1` 实时拉取，默认读快照防限频） | 08 总览卡片 |
 | **指数体制层（v1.1）** | `get_index_regime()` → IndexRegime：^GSPC/^NDX/^SOX 收盘与 MA200、^VIX、^SOX 的 ATR14 | 05 Engine（体制层硬约束）、04 破位×事件分级 |
-| 财报/基本面 | `get_financials(symbol)`：当前实现填营收 YoY、毛利率、ROE、PE(TTM)；净利 YoY 与 FCF 为模型预留字段（当前恒 None，仅 mock 演示填充） | 05 company_score |
+| 财报/基本面 | `get_financials(symbol)`：季度营收与同季经营现金流、资本开支、自由现金流（最多五期），营收 YoY、毛利率、ROE、PE(TTM)；年度现金流及净债务另行保留 | 05 company_score |
 | 财报日期 | `get_earnings_dates(symbol, limit=4)` | 04 经济日历（事件前降级依据） |
 
 ## 约定
@@ -21,3 +21,4 @@ yfinance 单一来源提供：
 - TTL 分级：行情/体制层 15min、financials/earnings 12h、bars_range 24h；
 - 版本钉死 `yfinance==1.5.2` + `curl-cffi>=0.15,<0.16`（0.16 曾致断裂）；备用降级 Stooq CSV（预留未实现）；
 - 防限频：串行 + 随机 sleep + tenacity 退避（见 [base-cache.md](base-cache.md)）。
+- 季度报表按期末日期精确对齐；缺少当季经营现金流或资本开支时，季度自由现金流保持缺失，不用年度数值补齐。

@@ -18,7 +18,7 @@ import yfinance as yf
 from collectors.base import network_retry, ttl_cache
 from domain import technicals
 from domain.scoring import IndexLevel, IndexRegime
-from domain.stock import DailyBar, Financials, MarketQuote
+from domain.stock import DailyBar, Financials, MarketQuote, QuarterlyFinancials
 from domain.asof import analysis_clock, completed_bars
 
 INDEX_SYMBOLS = ("^GSPC", "^NDX", "^SOX")
@@ -119,22 +119,57 @@ class MarketCollector:
             sox_atr14=technicals.atr_pct(sox_bars) if sox_bars else None,
         )
 
-    @ttl_cache("market_financials_v14", ttl_seconds=12 * 3600)
+    @ttl_cache("market_financials_v15", ttl_seconds=12 * 3600)
     def get_financials(self, symbol: str) -> Financials:
         """财报基本面（best-effort：字段缺失返回 None，由评分侧降级标注）。"""
         result = Financials(source="yfinance", collected_at=datetime.now(timezone.utc))
         try:
             tk = yf.Ticker(symbol)
+        except Exception:
+            return result
+
+        def value(statement, row, col):
+            if statement is None or statement.empty or row not in statement.index:
+                return None
+            try:
+                number = float(statement.loc[row, col])
+                return number if math.isfinite(number) else None
+            except (TypeError, ValueError, KeyError):
+                return None
+
+        try:
             quarterly = tk.quarterly_financials
             if quarterly is not None and not quarterly.empty and "Total Revenue" in quarterly.index:
-                revenues = quarterly.loc["Total Revenue"].dropna()
-                if len(revenues) >= 5:  # 去年同季（4 期前）与最近期
-                    result.revenue_yoy = (revenues.iloc[0] / revenues.iloc[4] - 1) * 100
+                dates = sorted((col.date() for col in quarterly.columns), reverse=True)
+                by_date = {col.date(): col for col in quarterly.columns}
+                result.quarters = [QuarterlyFinancials(
+                    period_end=day, revenue=value(quarterly, "Total Revenue", by_date[day]),
+                ) for day in dates[:5]]
+                if len(result.quarters) >= 5:
+                    latest, year_ago = result.quarters[0].revenue, result.quarters[4].revenue
+                    if latest is not None and year_ago is not None and year_ago > 0:
+                        result.revenue_yoy = (latest / year_ago - 1) * 100
             _sleep()
         except Exception:
             pass
         try:
-            info = yf.Ticker(symbol).info
+            cash_quarterly = tk.quarterly_cashflow
+            if cash_quarterly is not None and not cash_quarterly.empty:
+                cash_by_date = {col.date(): col for col in cash_quarterly.columns}
+                for quarter in result.quarters:
+                    col = cash_by_date.get(quarter.period_end)
+                    if col is None:
+                        continue
+                    quarter.operating_cash_flow = value(cash_quarterly, "Operating Cash Flow", col)
+                    capex = value(cash_quarterly, "Capital Expenditure", col)
+                    quarter.capital_expenditure = abs(capex) if capex is not None else None
+                    if quarter.operating_cash_flow is not None and quarter.capital_expenditure is not None:
+                        quarter.free_cash_flow = quarter.operating_cash_flow - quarter.capital_expenditure
+            _sleep()
+        except Exception:
+            pass
+        try:
+            info = tk.info
             result.gross_margin = info.get("grossMargins", None)
             if result.gross_margin is not None:
                 result.gross_margin *= 100
@@ -149,19 +184,14 @@ class MarketCollector:
         except Exception:
             pass
         try:
-            cash = yf.Ticker(symbol).cashflow
+            cash = tk.cashflow
             if cash is not None and not cash.empty:
                 col = cash.columns[0]
-                def value(row):
-                    if row not in cash.index:
-                        return None
-                    v = float(cash.loc[row, col])
-                    return v if math.isfinite(v) else None
                 result.period_end = col.date()
-                result.operating_cash_flow = value("Operating Cash Flow")
-                capex = value("Capital Expenditure")
+                result.operating_cash_flow = value(cash, "Operating Cash Flow", col)
+                capex = value(cash, "Capital Expenditure", col)
                 result.capital_expenditure = abs(capex) if capex is not None else None
-                result.free_cash_flow = value("Free Cash Flow")
+                result.free_cash_flow = value(cash, "Free Cash Flow", col)
                 if result.operating_cash_flow is not None and result.capital_expenditure is not None:
                     result.free_cash_flow = result.operating_cash_flow - result.capital_expenditure
                 if result.free_cash_flow is not None:

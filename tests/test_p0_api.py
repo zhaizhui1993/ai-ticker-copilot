@@ -77,9 +77,9 @@ def test_dashboard_does_not_republish_old_or_expired_add_signals(monkeypatch, ve
 def test_pipeline_persists_serializable_valuation_and_audit(monkeypatch):
     from analyzer import pipeline
     from collectors.mock import MockMarket, MockMacro
-    from events_lib.calendar import market_today
+    from domain.asof import analysis_clock
     from events_lib.loader import load_seed_events
-    today = market_today()
+    today = analysis_clock().price_session_limit
 
     class Market(MockMarket):
         def get_daily_bars(self, ticker, days):

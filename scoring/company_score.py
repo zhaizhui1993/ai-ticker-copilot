@@ -28,6 +28,11 @@ def _clamp(v: float) -> float:
     return max(0.0, min(100.0, v))
 
 
+def _cash_conversion_score(fcf_margin_pct: float) -> float:
+    """自由现金流/同季营收，±约 17% 映射到 0~100。"""
+    return _clamp(50 + 3 * fcf_margin_pct)
+
+
 def _peg_valuation(pe: float, revenue_yoy: float, cyclical: bool) -> tuple[float, str]:
     """类 PEG（PE / 营收 YoY）分桶；周期段封顶。返回 (分数, 口径标注)。"""
     peg = pe / revenue_yoy
@@ -86,12 +91,36 @@ class CompanyScorer:
         else:
             notes.append("PE 缺失或亏损（估值腿剔除，权重重归一化；亏损期看成长/质量）")
 
-        # ③ 质量 30%
+        # ③ 质量 30%：季度现金流优先；年度 FCF 仅用于没有季度营收时的旧口径。
+        latest_quarter = fin.quarters[0] if fin.quarters else None
+        cash_ready = bool(latest_quarter and latest_quarter.revenue is not None
+                          and latest_quarter.revenue > 0
+                          and latest_quarter.free_cash_flow is not None)
+        cash_score = None
+        cash_summary = ""
+        trailing_margin = None
+        if cash_ready and latest_quarter is not None:
+            latest_margin = 100 * latest_quarter.free_cash_flow / latest_quarter.revenue
+            cash_score = _cash_conversion_score(latest_margin)
+            recent = fin.quarters[:4]
+            if (len(recent) == 4
+                    and all(q.revenue is not None and q.revenue > 0 and q.free_cash_flow is not None
+                            for q in recent)
+                    and all(70 <= (a.period_end - b.period_end).days <= 110
+                            for a, b in zip(recent, recent[1:]))):
+                trailing_margin = 100 * sum(q.free_cash_flow for q in recent) / sum(q.revenue for q in recent)
+                cash_score = 0.6 * cash_score + 0.4 * _cash_conversion_score(trailing_margin)
+            cash_summary = (f"最近季度 {latest_quarter.period_end} 自由现金流/营收 {latest_margin:.1f}%"
+                            + (f"，连续四季 {trailing_margin:.1f}%" if trailing_margin is not None else ""))
+        elif not fin.quarters and fin.fcf_positive is not None:
+            cash_score = 80.0 if fin.fcf_positive else 20.0
+            cash_summary = "年度自由现金流为正" if fin.fcf_positive else "年度自由现金流为负"
+
         quality_parts = []
         if fin.gross_margin is not None:
             quality_parts.append((_clamp(50 + (fin.gross_margin - 40) * 0.5), 0.5))
-        if fin.fcf_positive is not None:
-            quality_parts.append((80.0 if fin.fcf_positive else 20.0, 0.3))
+        if cash_score is not None:
+            quality_parts.append((cash_score, 0.3))
         if fin.roe is not None:
             quality_parts.append((_clamp(50 + (fin.roe - 15) * 0.3), 0.2))
         if quality_parts:
@@ -99,6 +128,8 @@ class CompanyScorer:
             legs.append(("质量", quality, WEIGHT_QUALITY))
         if len(quality_parts) < 3:
             notes.append("质量证据不完整：缺失项不视为负值，已知子项归一化")
+        if latest_quarter is not None and not cash_ready:
+            notes.append(f"最近季度 {latest_quarter.period_end} 营收或现金流缺失；年度 FCF 不代替当季数据")
 
         # ④ 技术面 15%：分层（伤害 25% + 趋势 40% + 择时 35%）
         tech_parts = {}
@@ -150,16 +181,26 @@ class CompanyScorer:
 
         indicators = {name: round(v, 1) for name, v, _ in legs}
         indicators["PE"] = fin.pe_ttm
+        if latest_quarter is not None:
+            indicators["最新财季"] = latest_quarter.period_end.isoformat()
+            indicators["季度营收"] = latest_quarter.revenue
+            indicators["季度经营现金流"] = latest_quarter.operating_cash_flow
+            indicators["季度资本开支"] = latest_quarter.capital_expenditure
+            indicators["季度自由现金流"] = latest_quarter.free_cash_flow
+            if cash_ready:
+                indicators["季度自由现金流率"] = round(latest_margin, 2)
+            if trailing_margin is not None:
+                indicators["连续四季自由现金流率"] = round(trailing_margin, 2)
         coverage = sum(x is not None for x in (
-            fin.revenue_yoy, fin.pe_ttm, fin.gross_margin, fin.fcf_positive, fin.roe)) / 5
+            fin.revenue_yoy, fin.pe_ttm, fin.gross_margin, cash_score, fin.roe)) / 5
         indicators["data_coverage"] = coverage
         indicators["fundamentals_ready"] = int(all(x is not None for x in (
-            fin.revenue_yoy, fin.gross_margin, fin.fcf_positive)))
+            fin.revenue_yoy, fin.gross_margin, cash_score)))
         indicators.update(tech_parts)
         parts_desc = "、".join(f"{name} {v:.0f}" for name, v, _ in legs)
         return ScoreBreakdown(
             score=total,
             indicators=indicators,
-            rationale=f"{ticker}：{parts_desc}{norm}，公司面{tone}。",
+            rationale=f"{ticker}：{parts_desc}{norm}，公司面{tone}。" + (f"{cash_summary}。" if cash_summary else ""),
             degraded=bool(notes), degraded_note="；".join(notes),
         )

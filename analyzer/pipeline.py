@@ -176,10 +176,13 @@ def run_analysis(refresh: bool = False, tickers: list[str] | None = None,
             analogy_note = json.dumps(case_evidence, ensure_ascii=False)
         calendar = calendar_by_symbol[stock.symbol]
         valuation = assess_valuation(stock.valuation, bars, today)
+        latest_financial_period = (fin.quarters[0].period_end if fin and fin.quarters
+                                   else fin.period_end if fin else None)
+        financial_age_limit = 180 if fin and fin.quarters else 550
         data_insufficient = (not company_score.indicators.get("fundamentals_ready") or not bars
                              or (today - bars[-1].date).days > 5
-                             or (fin is not None and fin.period_end is not None
-                                 and (today - fin.period_end).days > 550))
+                             or (latest_financial_period is not None
+                                 and (today - latest_financial_period).days > financial_age_limit))
         regime_dates = {i.as_of for i in regime.indexes if i.as_of is not None} if regime else set()
         if regime and regime.vix_as_of is not None:
             regime_dates.add(regime.vix_as_of)

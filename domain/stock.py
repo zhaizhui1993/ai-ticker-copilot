@@ -75,6 +75,16 @@ class DailyBar(BaseModel):
     volume: float = 0.0
 
 
+class QuarterlyFinancials(BaseModel):
+    """同一财报期的营收与现金流；缺失项保持 None。"""
+
+    period_end: date
+    revenue: float | None = None
+    operating_cash_flow: float | None = None
+    capital_expenditure: float | None = None  # 正数现金支出
+    free_cash_flow: float | None = None
+
+
 class Financials(BaseModel):
     """财报基本面（market.get_financials 的产物，公司面评分输入）"""
 
@@ -88,6 +98,7 @@ class Financials(BaseModel):
     operating_cash_flow: float | None = None
     capital_expenditure: float | None = None  # 正数现金支出
     free_cash_flow: float | None = None
+    quarters: list[QuarterlyFinancials] = Field(default_factory=list)  # 最新在前，按 period_end 对齐
     net_debt: float | None = None
     shares_outstanding: float | None = None
     period_end: date | None = None

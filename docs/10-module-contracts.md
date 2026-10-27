@@ -64,7 +64,7 @@ class MarketCollector(DataSource):
     def get_index_regime(self) -> IndexRegime: ...
         # IndexRegime: indexes: list[IndexLevel]（spx/ndx/sox 各含 close/ma200）+ vix + sox_atr14
         # + regime_broken()（体制层判定，见 05 §6.1.1）
-    def get_financials(self, symbol: str) -> Financials: ...      # 营收YoY/毛利/ROE/PE(TTM)（净利YoY/FCF 预留）
+    def get_financials(self, symbol: str) -> Financials: ...      # 同季营收/经营现金流/资本开支/FCF，营收YoY/毛利/ROE/PE(TTM)
     def get_earnings_dates(self, symbol: str, limit: int = 4) -> list[date]: ...  # 经济日历用（04 §6.5）
 
 class MacroCollector(DataSource):
