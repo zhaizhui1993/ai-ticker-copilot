@@ -135,7 +135,7 @@ flowchart TB
     CFG -.注入.-> ENTRY & COLLECT & ANALYZER
 ```
 
-#### 图 A|事件管道时序(默认每 20min)
+#### 图 A|采集新闻并识别市场事件时序(默认每 20min)
 
 ```mermaid
 sequenceDiagram
@@ -171,7 +171,7 @@ sequenceDiagram
     Note over R: 此后 active事件可被分析消费<br>状态变更走change_event审计
 ```
 
-#### 图 B|收盘分析主链时序(决策核心,周一~五 17:35 ET)
+#### 图 B|生成股票池收盘研判与风险信号时序(决策核心,周一~五 17:35 ET)
 
 ```mermaid
 sequenceDiagram
@@ -226,7 +226,7 @@ sequenceDiagram
     P-->>S: result+outputs+regime+db_saved
 ```
 
-#### 图 C|X 采集时序(每日 09:00 ET)
+#### 图 C|采集关注博主的 X 帖子时序(每日 09:00 ET)
 
 ```mermaid
 sequenceDiagram
@@ -245,7 +245,7 @@ sequenceDiagram
     Note over R: sentiment打标后回填<br>当前未接入评分x_sentiment=None
 ```
 
-#### 图 D|历史沉淀闭环时序(每日 08:00 ET + 手动挖掘)
+#### 图 D|回填事件市场表现并生成历史案例草稿时序(每日 08:00 ET)
 
 ```mermaid
 sequenceDiagram
@@ -323,7 +323,7 @@ sequenceDiagram
     L->>R: put_event×N source=seed 幂等
     A->>S: SCHEDULER_ENABLED→build_scheduler·start
     S-->>A: 5任务就绪·美东时区·max_instances=1
-    Note over S: event_poll 20min·eod 1735·x_crawl 0900·sediment 0800·monthly_eval 每月1日
+    Note over S: 新闻事件采集 20min·股票池收盘研判 1735·博主帖子采集 0900·历史案例草稿生成 0800·信号评估归档 每月1日
 ```
 
 #### 图 G|事件生命周期管理时序(状态变更与合并)
@@ -347,7 +347,7 @@ sequenceDiagram
     W->>C: GET {id}/changes 查看完整轨迹
 ```
 
-#### 图 H|月度评测闭环时序(每月 1 日 10:00 ET)
+#### 图 H|评估历史研判信号并归档月报时序(每月 1 日 10:00 ET)
 
 ```mermaid
 sequenceDiagram
@@ -409,19 +409,23 @@ stateDiagram-v2
 
 APScheduler `AsyncIOScheduler`,时区 `America/New_York`,`job_defaults={coalesce: True, max_instances: 1}`;任务经 `_spawn` 在守护线程执行,不阻塞事件循环。
 
-| id | 触发 | 任务体 | 失败行为 |
-|---|---|---|---|
-| `event_poll` | interval `EVENT_POLL_INTERVAL_MIN`(默认 20min) | `poll_events_job` → `poll_once(tickers)`(§3.1) | 打印降级信息,原文保持待重试 |
-| `eod_analysis` | cron 周一~五 17:35 ET | `run_analysis(refresh=True)`(§3.2) | 打印失败,不影响下轮 |
-| `x_crawl` | cron 每日 09:00 ET | `crawl_and_store(influencers, tickers)`(§3.3) | 打印失败,明日重试 |
-| `auto_sediment` | cron 每日 08:00 ET | `sediment_due_events(today)`(§3.4) | 打印失败 |
-| `monthly_eval` | cron 每月 1 日 10:00 ET | `evaluation.run_monthly_report()`(§8) | 打印失败;mock 模式跳过 |
+业务名称、任务 ID 与任务函数按“动作 + 业务对象/产出”命名,下表与 `scheduler.py` 的注册信息一致。
+
+| 业务名称 / 任务 ID | 做什么、产出用于哪里 | 触发 | 任务体 | 失败行为 |
+|---|---|---|---|---|
+| **采集新闻并识别市场事件**<br>`collect_news_events` | 抓取新闻、归档原文、筛选股票池相关报道,抽取事件并补充价格反应,写入当前事件库,供事件中心展示和后续研判使用;本任务不触发股票分析 | interval `EVENT_POLL_INTERVAL_MIN`(默认 20min) | `collect_news_events_job` → `poll_once(tickers)`(§3.1) | 打印降级信息,原文保持待重试 |
+| **生成股票池收盘研判与风险信号**<br>`generate_stock_pool_close_signals` | 汇总行情、财务、宏观与活跃事件,完成四维评分、历史类比、估值准入和风险约束,输出逐股研究信号与理由,保存快照及分析审计记录 | cron 周一~五 17:35 ET | `generate_stock_pool_close_signals_job` → `run_analysis(refresh=True)`(§3.2) | 打印失败,不影响下轮 |
+| **采集关注博主的 X 帖子**<br>`collect_influencer_x_posts` | 按配置抓取博主的帖子、回复与引用,去重写入帖子库;当前采集结果尚未用于评分 | cron 每日 09:00 ET | `collect_influencer_x_posts_job` → `crawl_and_store(influencers, tickers)`(§3.3) | 打印失败,明日重试 |
+| **回填事件市场表现并生成历史案例草稿**<br>`backfill_event_outcomes_and_build_drafts` | 对发生满 60/180 天(±3 天)的事件,回填个股回撤、修复时间及大盘表现,生成待人工核对的历史案例草稿;确认转正后才进入类比匹配库 | cron 每日 08:00 ET | `backfill_event_outcomes_and_build_drafts_job` → `sediment_due_events(today)`(§3.4) | 打印失败 |
+| **评估历史研判信号并归档月报**<br>`evaluate_signals_and_archive_report` | 统计历史信号之后的收益、相对股票池基准的超额收益、风险约束偏离和置信度校准,追加保存月度评测报告,用于持续检验研判质量 | cron 每月 1 日 10:00 ET | `evaluate_signals_and_archive_report_job` → `evaluation.run_monthly_report()`(§8) | 打印失败;mock 模式跳过 |
 
 ---
 
 ## 3. 核心数据流
 
-### 3.1 准实时事件管道(collectors/news.py,默认 20min 一轮)
+### 3.1 采集新闻并识别市场事件(collectors/news.py,默认 20min 一轮)
+
+将新闻报道转成可供研判使用的当前事件:保留原文出处,识别相关股票与事件内容,补充价格反应后入库。对应任务 `collect_news_events`。
 
 ```
 poll_once(pool_tickers) → process_articles(fetch_all_articles(...), pool)
@@ -442,7 +446,9 @@ poll_once(pool_tickers) → process_articles(fetch_all_articles(...), pool)
 
 **事件生命周期**:`active → resolved / retracted / merged`(状态变更走 `repository.change_event`,写 `event_changes` 审计);分析只消费 `list_active_current_events(as_of)`。
 
-### 3.2 收盘完整分析(analyzer/pipeline.run_analysis,决策主链)
+### 3.2 生成股票池收盘研判与风险信号(analyzer/pipeline.run_analysis,决策主链)
+
+为股票池逐股生成研究信号、理由与风险提示,并保存可追溯的分析记录。对应任务 `generate_stock_pool_close_signals`;同一分析入口也支持手动调用与盘中观察模式。
 
 ```python
 run_analysis(refresh=False, tickers=None, mode="eod"|"intraday_observe")
@@ -472,7 +478,9 @@ run_analysis(refresh=False, tickers=None, mode="eod"|"intraday_observe")
 
 **⑦ 落库(降级:DB 失败时分析照常返回,`db_saved=False`)**:逐票 `upsert_snapshot(SnapshotRow)`(含回测字段:band/regime_gate/company_gate/position_cap/valuation/decision_at/price_date/source/version)+ `append_analysis_run(audit_input, result)`(全输入含 bars/financials/macro/regime/events/matches/prompt + 全输出,只追加)。
 
-### 3.3 X 采集(collectors/x_source.py,每日 09:00 ET)
+### 3.3 采集关注博主的 X 帖子(collectors/x_source.py,每日 09:00 ET)
+
+将配置中关注博主的帖子保存到帖子库,保留作者、内容和来源等信息。对应任务 `collect_influencer_x_posts`。
 
 ```python
 crawl_and_store(influencers, pool_tickers) -> {posts, stored, throttled, skipped, error, mode}
@@ -480,11 +488,13 @@ crawl_and_store(influencers, pool_tickers) -> {posts, stored, throttled, skipped
 
 `X_MODE` 路由:`off` 直接返回空;`api`→`x_api.XApiCollector`(twitterapi.io,帖+回复+引用一次拿全);`crawl`→`x_crawler.XCollector`(Playwright 登录态)。**节流先于抓取**:`repository.try_crawl_lock(f"x:{handle}")` 每博主每天 1 次(`crawl_state` 表);入库 `put_x_posts`(post_id 去重)。X 情绪**未接入评分**(`EventScorer(x_sentiment=None)` 恒定)。
 
-### 3.4 历史事件沉淀闭环
+### 3.4 回填事件市场表现并生成历史案例草稿
+
+把已发生一段时间的事件整理成带有实测市场表现的历史案例草稿,供人工核对后扩充类比库。对应任务 `backfill_event_outcomes_and_build_drafts`;下文同时说明其依赖的量化算法与相关的手动波段挖掘能力。
 
 - **联动量化算法**(`events_lib/linkage.py`,纯函数):窗口 = T0 前 30 交易日 ~ T0 后 180 交易日;前高 = max(前 30 日收盘, T0 收盘);`drawdown` = 窗口内 max(1−close/前高)(负百分数);`drawdown_days` = T0→最低点交易日数;`recovery_days` = 最低点→重新站上前高的交易日数(窗口内未收复记 None);另算 `sp500_1w/1m`(T0 后 5/21 交易日 SPY 涨跌)与 `vix_peak`。
 - **前状态口径**(`events_lib/pre_state.py`):状态 = **T0 前一交易日收盘**(不含事件日,避免污染);四字段 `pre_drawdown_52w / pre_bias_ma200 / pre_runup_20d / pre_rsi14`;前置 K 线 <21 根整体放弃;<200 根乖离为 None;<252 根回撤为 None。回填走 `get_daily_bars_between(ticker, t0−420d, t0)`,**已有值不覆盖**(人工核对优先)。
-- **自动沉淀**(`events_lib/auto_sediment.py`):对 `occurred_date` 距今 **T+60 / T+180 天(±3 天容差)** 的当前事件,复用联动算法实测回填,生成 `source='auto'` 草稿(`tags` 含"待核对",`event_id="auto-{window}-{原id}"` 幂等);回填标的 = 池内优先,≤6 只;`direction` 按实测回撤符号,`magnitude` 固定 0.5。
+- **到期事件回填与案例草稿生成**(代码称“自动沉淀”,`events_lib/auto_sediment.py`):对 `occurred_date` 距今 **T+60 / T+180 天(±3 天容差)** 的当前事件,复用联动算法实测回填,生成 `source='auto'` 草稿(`tags` 含"待核对",`event_id="auto-{window}-{原id}"` 幂等);回填标的 = 池内优先,≤6 只;`direction` 按实测回撤符号,`magnitude` 固定 0.5。
 - **匹配库口径**:`load_matching_lib() = seed + user`(**auto 草稿不参与类比**);`enrich_from_initialized_history` 用初始化历史富化(非 mock)。
 - **波段挖掘**(`events_lib/mine.py`):zigzag 变体——滚动峰値更新;自峰回撤 ≥`min_dd_pct`(5%)进入回调;自谷反弹 ≥`rebound_pct`(3%)或收复峰确认结束;未收复的开放波段也输出(recovery_days=None)。产物是量化骨架,归因人工/LLM 补。
 
@@ -730,6 +740,8 @@ enforce(result, fallback, ctx, tickers):
 ---
 
 ## 8. 评测体系(analyzer/evaluation.py)
+
+**评估历史研判信号并归档月报**(任务 `evaluate_signals_and_archive_report`):检查过去发出的研究信号在后续交易日的表现,比较相对基准收益、风险与置信度,产出可持续追踪的月度报告。
 
 哲学:不评单次对错,评"过程可审计 + 统计有增量";一切收益看**相对全池等权同期基准的超额**(牛市绝对胜率被 β 主导);月度存档只增不覆盖。
 

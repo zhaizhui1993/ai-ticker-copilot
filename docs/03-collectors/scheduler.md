@@ -3,16 +3,19 @@
 > 模块：03 数据采集层 ｜ 成分：APScheduler 调度 ｜ 对应代码：scheduler.py ｜ 实施阶段：P9
 > 来源：原方案 §6.4（调度器/时区/同日重复条目）
 
-## 四类任务（核心组件，默认开：`SCHEDULER_ENABLED=true`）
+## 五类任务（核心组件，默认开：`SCHEDULER_ENABLED=true`）
 
-APScheduler AsyncIOScheduler 挂 FastAPI lifespan（`job_defaults: coalesce=True, max_instances=1`；任务到点在线程池执行，避免阻塞事件循环）：
+APScheduler AsyncIOScheduler 挂 FastAPI lifespan（`job_defaults: coalesce=True, max_instances=1`；任务到点在守护线程执行，避免阻塞事件循环）：
 
-| # | 任务 | 触发 | 说明 |
+| # | 任务 / 调度 ID | 触发 | 说明 |
 |---|---|---|---|
-| ① | 事件轮询 | interval，`EVENT_POLL_INTERVAL_MIN`（默认 20 分钟） | 驱动 [news-pipeline.md](news-pipeline.md)，24 小时运行覆盖美东盘前/盘中/盘后 |
-| ② | 完整分析 | cron，America/New_York"周一至五 17:35"收盘后 | 调 [06-analyzer](../06-analyzer/README.md) 的 pipeline.run_analysis() |
-| ③ | X 低频抓取 | cron，每日 ET 09:00 | 经 x_source 路由驱动（X_MODE=api/crawl/off；每博主每天 1 次为防风控/控费硬约束） |
-| ④ | 事件自动沉淀 | cron，每日 ET 08:00 | T+60/T+180 天回填，见 [04-events/auto-sedimentation.md](../04-events/auto-sedimentation.md) |
+| ① | 采集新闻并识别市场事件<br>`collect_news_events` | interval，`EVENT_POLL_INTERVAL_MIN`（默认 20 分钟） | 驱动 [news-pipeline.md](news-pipeline.md)，将新闻抽取为当前事件并入库，供展示与后续研判使用，24 小时运行 |
+| ② | 生成股票池收盘研判与风险信号<br>`generate_stock_pool_close_signals` | cron，America/New_York"周一至五 17:35"收盘后 | 调 [06-analyzer](../06-analyzer/README.md) 的 pipeline.run_analysis()，输出逐股研究信号、理由和风险提示，保存快照与审计记录 |
+| ③ | 采集关注博主的 X 帖子<br>`collect_influencer_x_posts` | cron，每日 ET 09:00 | 经 x_source 路由抓取帖子并入库（X_MODE=api/crawl/off；每博主每天 1 次）；当前尚未用于评分 |
+| ④ | 回填事件市场表现并生成历史案例草稿<br>`backfill_event_outcomes_and_build_drafts` | cron，每日 ET 08:00 | 对 T+60/T+180 天的事件回填实测市场表现，生成待核对案例草稿，见 [04-events/auto-sedimentation.md](../04-events/auto-sedimentation.md) |
+| ⑤ | 评估历史研判信号并归档月报<br>`evaluate_signals_and_archive_report` | cron，每月 1 日 ET 10:00 | 评估历史信号后续表现、超额收益及置信度校准，追加归档到 `data/eval/`；mock 模式跳过 |
+
+各任务入口函数为对应调度 ID 加 `_job` 后缀，注册时的 `name` 使用表中的中文业务名称并附触发时间。
 
 ## 并发与幂等约定
 
